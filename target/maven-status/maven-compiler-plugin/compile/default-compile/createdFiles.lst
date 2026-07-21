@@ -7,11 +7,13 @@ org\ItsInspector\sunnyCoinflip\managers\PillarSpectatorManager$SpectatorState.cl
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$2.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$5.class
 org\ItsInspector\sunnyCoinflip\managers\PillarSpectatorManager.class
+org\ItsInspector\sunnyCoinflip\listeners\SpecialEggListener.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$1.class
 org\ItsInspector\sunnyCoinflip\models\PillarMatch.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$1$1.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$3.class
 org\ItsInspector\sunnyCoinflip\listeners\InventoryListener$3.class
+org\ItsInspector\sunnyCoinflip\utils\SpecialEgg.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$4.class
 org\ItsInspector\sunnyCoinflip\commands\CoinflipCommand.class
 org\ItsInspector\sunnyCoinflip\listeners\CommandBlockListener.class

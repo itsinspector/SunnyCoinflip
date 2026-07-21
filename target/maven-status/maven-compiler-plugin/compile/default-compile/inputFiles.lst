@@ -6,6 +6,7 @@ C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sun
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\listeners\CommandBlockListener.java
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\listeners\InventoryListener.java
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\listeners\PillarListener.java
+C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\listeners\SpecialEggListener.java
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\managers\GameManager.java
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\managers\PillarSpectatorManager.java
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\models\Coinflip.java
@@ -13,3 +14,4 @@ C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sun
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\SunnyCoinflip.java
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\utils\ItemBuilder.java
 C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\utils\NumberParser.java
+C:\Users\nichi\Documents\GitHub\SunnyCoinflip\src\main\java\org\ItsInspector\sunnyCoinflip\utils\SpecialEgg.java
