@@ -1,0 +1,17 @@
+name: SunnyCoinflip
+version: '1.0'
+main: org.ItsInspector.sunnyCoinflip.SunnyCoinflip
+api-version: '1.21'
+depend: [Vault]
+commands:
+  coinflip:
+    description: Comando principale per il coinflip
+    aliases: [cf]
+  setpillarsfirst:
+    description: Imposta la posizione del primo pillar
+    permission: sunnycoinflip.admin
+  setpillarsopponent:
+    description: Imposta la posizione dello sfidante dei pillars
+    permission: sunnycoinflip.admin
+  pillars:
+    description: Comando per scommettere sui pillars

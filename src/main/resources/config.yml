@@ -1,0 +1,20 @@
+# SunnyCoinflip Configuration
+
+# Impostazioni Coinflip Normale
+coinflip:
+  max-amount: 10000000
+  # Moltiplicatore vincita (es. 1.7 = 170% dell'importo scommesso)
+  win-multiplier: 1.7
+
+# Impostazioni Pillars
+pillars:
+  # Altezza massima raggiungibile prima di essere bloccati
+  max-height: -36
+  # Conto alla rovescia prima dell'inizio
+  countdown: 10
+  # Intervallo in ticks (20 ticks = 1 secondo) per il drop degli oggetti
+  item-drop-interval: 60
+
+# Le posizioni dei pillar verranno salvate qui sotto automaticamente
+# pillarFirst:
+# pillarOpponent:
