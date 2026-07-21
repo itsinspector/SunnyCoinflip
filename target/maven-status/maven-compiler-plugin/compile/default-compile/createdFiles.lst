@@ -3,8 +3,10 @@ org\ItsInspector\sunnyCoinflip\utils\ItemBuilder.class
 org\ItsInspector\sunnyCoinflip\commands\PillarSetupCommands.class
 org\ItsInspector\sunnyCoinflip\integrations\PillarExpansion.class
 org\ItsInspector\sunnyCoinflip\listeners\InventoryListener$2.class
+org\ItsInspector\sunnyCoinflip\managers\PillarSpectatorManager$SpectatorState.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$2.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$5.class
+org\ItsInspector\sunnyCoinflip\managers\PillarSpectatorManager.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$1.class
 org\ItsInspector\sunnyCoinflip\models\PillarMatch.class
 org\ItsInspector\sunnyCoinflip\listeners\PillarListener$1$1.class
