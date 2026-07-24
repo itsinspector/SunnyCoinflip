@@ -15,6 +15,59 @@ pillars:
   # Intervallo in ticks (20 ticks = 1 secondo) per il drop degli oggetti
   item-drop-interval: 60
 
-# Le posizioni dei pillar verranno salvate qui sotto automaticamente
+# Coinflip BedWars interno: non richiede altri plugin.
+bedwars:
+  enabled: true
+
+  # Conto alla rovescia prima di sbloccare movimento e PvP.
+  countdown: 5
+
+  # A Y=43 o con mezzo cuore il giocatore diventa spectator e rientra dopo 3 secondi.
+  void-y: 43
+  respawn-delay-ticks: 60
+
+  # Invulnerabilità dopo l'inizio e dopo ogni rientro. 60 tick = 3 secondi.
+  spawn-protection-ticks: 60
+
+  # Dopo 3 minuti entrambi i letti spariscono e non sono più disponibili respawn.
+  beds-auto-destroy-seconds: 180
+
+  # Dopo 5 minuti parte il deathmatch. Il danno è espresso in punti vita
+  # (2 punti vita = 1 cuore) e aumenta ogni secondo.
+  deathmatch-start-seconds: 300
+  deathmatch-starting-damage: 1.0
+  deathmatch-damage-increase: 1.0
+
+  # Y=100 è consentito; da Y=101 in poi il piazzamento viene bloccato.
+  max-build-height: 100
+
+  # Se i letti non sono configurati manualmente, vengono cercati vicino agli spawn.
+  bed-search-radius: 12
+
+  # Dopo quanti secondi una sfida non accettata scade. 0 = mai.
+  challenge-expire-seconds: 300
+
+  # Rimuove a fine round frecce, drop, mob e altre entità nate dopo l'inizio.
+  cleanup-new-entities: true
+
+  # Testi restituiti dai placeholder PlaceholderAPI.
+  placeholders:
+    available: "&aDisponibile"
+    unavailable: "&cNon disponibile"
+    busy: "&cOccupato"
+    disabled: "&cDisabilitato"
+    not-configured: "&eNon configurato"
+
+  # Salvati automaticamente con:
+  # /cf bedwars setfirstpos
+  # /cf bedwars setopponentpos
+  # /cf bedwars setfirstbed
+  # /cf bedwars setopponentbed
+  # first-position:
+  # opponent-position:
+  # first-bed:
+  # opponent-bed:
+
+# Le posizioni dei Pillars vengono salvate qui automaticamente.
 # pillarFirst:
 # pillarOpponent:

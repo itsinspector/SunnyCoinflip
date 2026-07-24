@@ -1,12 +1,15 @@
 name: SunnyCoinflip
-version: '1.0'
+version: '1.3'
 main: org.ItsInspector.sunnyCoinflip.SunnyCoinflip
 api-version: '1.21'
 depend: [Vault]
+softdepend: [PlaceholderAPI]
+
 commands:
   coinflip:
     description: Comando principale per il coinflip
     aliases: [cf]
+    usage: /cf <classici|pillars|bedwars|info>
   setpillarsfirst:
     description: Imposta la posizione del primo pillar
     permission: sunnycoinflip.admin
@@ -15,3 +18,8 @@ commands:
     permission: sunnycoinflip.admin
   pillars:
     description: Comando per scommettere sui pillars
+
+permissions:
+  sunnycoinflip.admin:
+    description: Gestione amministrativa di SunnyCoinflip
+    default: op
