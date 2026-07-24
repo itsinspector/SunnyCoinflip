@@ -24,6 +24,7 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerKickEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -80,6 +81,17 @@ public final class BedfightListener implements Listener {
         if (result == BedfightManager.BreakResult.BED) {
             event.setDropItems(false);
             event.setExpToDrop(0);
+            return;
+        }
+        if (result == BedfightManager.BreakResult.BREAKABLE_ARENA_BLOCK) {
+            // Always give the broken defence block, even when the kit tool is not a vanilla harvesting tier.
+            org.bukkit.Material brokenType = event.getBlock().getType();
+            event.setDropItems(false);
+            event.setExpToDrop(0);
+            event.getBlock().getWorld().dropItemNaturally(
+                    event.getBlock().getLocation().add(0.5, 0.25, 0.5),
+                    new org.bukkit.inventory.ItemStack(brokenType, 1)
+            );
         }
     }
 
@@ -151,10 +163,19 @@ public final class BedfightListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent event) {
-        if (manager().isActiveParticipant(event.getPlayer().getUniqueId())) {
-            event.setCancelled(true);
-            event.getPlayer().sendMessage("§cNon puoi buttare gli oggetti del kit.");
+        Player player = event.getPlayer();
+        if (!manager().isActiveParticipant(player.getUniqueId())) {
+            return;
         }
+
+        if (manager().isUndroppableKitItem(event.getItemDrop().getItemStack())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
+        manager().handleJoin(event.getPlayer());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -163,7 +184,7 @@ public final class BedfightListener implements Listener {
                 && manager().isActiveParticipant(player.getUniqueId())) {
             event.setCancelled(true);
             player.setFoodLevel(20);
-            player.setSaturation(20.0f);
+            player.setSaturation(0.0f);
         }
     }
 
