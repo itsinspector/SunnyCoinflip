@@ -74,7 +74,6 @@ public final class PillarSpectatorManager implements Listener {
         }
 
         spectators.put(uuid, new SpectatorState(player.getLocation().clone(), player.getGameMode()));
-        player.setGameMode(GameMode.SPECTATOR);
 
         if (!player.teleport(destination)) {
             SpectatorState state = spectators.remove(uuid);
@@ -85,6 +84,7 @@ public final class PillarSpectatorManager implements Listener {
             return false;
         }
 
+        player.setGameMode(GameMode.SPECTATOR);
         player.sendMessage("§aOra stai spectando il round di Pillars. §7Esci dal mondo per tornare indietro.");
         return true;
     }
