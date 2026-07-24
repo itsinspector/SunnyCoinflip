@@ -77,10 +77,7 @@ public final class BedfightListener implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (result == BedfightManager.BreakResult.BED
-                || result == BedfightManager.BreakResult.BREAKABLE_ARENA_BLOCK) {
-            // Beds and the only arena materials that may be broken never create drops.
-            // Their original BlockData is restored when the round ends.
+        if (result == BedfightManager.BreakResult.BED) {
             event.setDropItems(false);
             event.setExpToDrop(0);
         }
@@ -179,8 +176,16 @@ public final class BedfightListener implements Listener {
             event.setCancelled(true);
             return;
         }
-        if (manager().handlePotentialElimination(player, event.getFinalDamage())) {
+        if (manager().handlePotentialElimination(player, event.getFinalDamage(), event.getCause())) {
             event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onRecordDamager(EntityDamageByEntityEvent event) {
+        if (event.getEntity() instanceof Player victim) {
+            Player attacker = resolvePlayer(event.getDamager());
+            manager().recordLastDamager(victim, attacker);
         }
     }
 

@@ -21,6 +21,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
@@ -55,6 +56,7 @@ public final class BedfightManager {
     private final Map<UUID, PlayerSnapshot> waitingSnapshots = new HashMap<>();
     private final Set<UUID> awaitingCreateAmount = new HashSet<>();
     private final Map<UUID, PlayerSnapshot> pendingRestores = new HashMap<>();
+    private final Map<UUID, LastHit> lastHits = new HashMap<>();
 
     private volatile ActiveRound activeRound;
 
@@ -252,6 +254,14 @@ public final class BedfightManager {
         waitingByCreator.put(creator.getUniqueId(), challenge);
         waitingSnapshots.put(creator.getUniqueId(), PlayerSnapshot.capture(creator));
         Location waitingSpawn = getFirstPosition();
+        creator.closeInventory();
+        creator.setGameMode(GameMode.SURVIVAL);
+        creator.setAllowFlight(false);
+        creator.setFlying(false);
+        creator.setInvulnerable(true);
+        clearPotionEffects(creator);
+        resetCombatState(creator);
+        giveKit(creator, Team.FIRST);
         if (waitingSpawn != null) {
             creator.teleport(waitingSpawn);
         }
@@ -576,7 +586,7 @@ public final class BedfightManager {
         }, getRespawnDelayTicks());
     }
 
-    public boolean handlePotentialElimination(Player player, double finalDamage) {
+    public boolean handlePotentialElimination(Player player, double finalDamage, DamageCause cause) {
         ActiveRound round = activeRound;
         if (round == null || !round.playing || round.finishing
                 || !isActiveParticipant(player.getUniqueId())
@@ -586,8 +596,17 @@ public final class BedfightManager {
         if (player.getHealth() - Math.max(0.0, finalDamage) > 1.0) {
             return false;
         }
+        announceCustomDeath(player, cause);
         eliminateTemporarily(player, "§cSei stato eliminato!");
         return true;
+    }
+
+    public void recordLastDamager(Player victim, Player attacker) {
+        if (victim == null || attacker == null || victim.getUniqueId().equals(attacker.getUniqueId())
+                || !isActiveParticipant(victim.getUniqueId()) || !isActiveParticipant(attacker.getUniqueId())) {
+            return;
+        }
+        lastHits.put(victim.getUniqueId(), new LastHit(attacker.getUniqueId(), System.currentTimeMillis()));
     }
 
     public void handleVoidLevel(Player player, Location destination) {
@@ -599,6 +618,7 @@ public final class BedfightManager {
         }
         double voidY = plugin.getConfig().getDouble("bedwars.void-y", 43.0);
         if (destination.getY() <= voidY) {
+            announceCustomDeath(player, DamageCause.VOID);
             eliminateTemporarily(player, "§cSei caduto nel vuoto!");
         }
     }
@@ -621,11 +641,30 @@ public final class BedfightManager {
         player.setInvulnerable(true);
         resetCombatState(player);
         player.teleport(team == Team.FIRST ? round.firstSpawn : round.opponentSpawn);
-        player.sendTitle(title, "§eRespawn tra 3 secondi", 0, 40, 5);
         playSound(player, Sound.ENTITY_VILLAGER_NO, 1.0f, 0.8f);
+        startRespawnTitleCountdown(round, player, team, title);
+    }
 
-        Bukkit.getScheduler().runTaskLater(plugin, () -> respawnAfterElimination(round, player, team),
-                getRespawnDelayTicks());
+    private void startRespawnTitleCountdown(ActiveRound round, Player player, Team team, String deathTitle) {
+        long totalTicks = Math.max(20L, getRespawnDelayTicks());
+        int totalSeconds = Math.max(1, (int) Math.ceil(totalTicks / 20.0));
+        final int[] remaining = {totalSeconds};
+        final BukkitTask[] task = new BukkitTask[1];
+        task[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (activeRound != round || round.finishing || !player.isOnline()
+                    || !round.respawning.contains(player.getUniqueId())) {
+                task[0].cancel();
+                return;
+            }
+            if (remaining[0] <= 0) {
+                task[0].cancel();
+                respawnAfterElimination(round, player, team);
+                return;
+            }
+            player.sendTitle(deathTitle, "§eRespawn tra §f" + remaining[0] + "§e...", 0, 22, 0);
+            playSound(player, Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 1.0f + ((totalSeconds - remaining[0]) * 0.15f));
+            remaining[0]--;
+        }, 0L, 20L);
     }
 
     private void respawnAfterElimination(ActiveRound round, Player player, Team team) {
@@ -698,7 +737,13 @@ public final class BedfightManager {
     }
 
     public boolean canMoveDuringCountdown(Player player, Location from, Location to) {
-        if (!isActiveParticipant(player.getUniqueId()) || activeRound == null || activeRound.playing || to == null) {
+        if (to == null) {
+            return true;
+        }
+        boolean waitingFirst = waitingByCreator.containsKey(player.getUniqueId());
+        boolean countdownParticipant = isActiveParticipant(player.getUniqueId())
+                && activeRound != null && !activeRound.playing;
+        if (!waitingFirst && !countdownParticipant) {
             return true;
         }
         return from.getBlockX() == to.getBlockX()
@@ -906,8 +951,8 @@ public final class BedfightManager {
     }
 
     private void startRoundClock(ActiveRound round) {
-        int bedsDestroyAfter = Math.max(1, plugin.getConfig().getInt("bedwars.beds-auto-destroy-seconds", 180));
-        int deathmatchAfter = Math.max(bedsDestroyAfter, plugin.getConfig().getInt("bedwars.deathmatch-start-seconds", 300));
+        int bedsDestroyAfter = Math.max(1, plugin.getConfig().getInt("bedwars.beds-auto-destroy-seconds", 300));
+        int deathmatchAfter = Math.max(bedsDestroyAfter, plugin.getConfig().getInt("bedwars.deathmatch-start-seconds", 420));
         double startingDamage = Math.max(0.1, plugin.getConfig().getDouble("bedwars.deathmatch-starting-damage", 1.0));
         double damageIncrease = Math.max(0.0, plugin.getConfig().getDouble("bedwars.deathmatch-damage-increase", 1.0));
 
@@ -939,7 +984,7 @@ public final class BedfightManager {
 
         forEachRoundViewer(round, player -> {
             player.sendTitle("§c§lLETTI DISTRUTTI!", "§7Non potete più respawnare", 5, 45, 10);
-            player.sendMessage(PREFIX + "§cSono passati 3 minuti: entrambi i letti si sono autodistrutti!");
+            player.sendMessage(PREFIX + "§cTempo scaduto: entrambi i letti si sono autodistrutti!");
             playSound(player, Sound.ENTITY_WITHER_SPAWN, 0.8f, 1.2f);
         });
     }
@@ -978,11 +1023,41 @@ public final class BedfightManager {
             return;
         }
         if (player.getHealth() - damage <= 1.0) {
+            announceCustomDeath(player, DamageCause.CUSTOM);
             eliminateTemporarily(player, "§4Eliminato dal Deathmatch!");
             return;
         }
         player.setHealth(Math.max(1.0, player.getHealth() - damage));
         playSound(player, Sound.ENTITY_PLAYER_HURT, 0.7f, 0.7f);
+    }
+
+    private void announceCustomDeath(Player victim, DamageCause cause) {
+        if (!victim.getWorld().getName().equalsIgnoreCase("bedfight")) {
+            return;
+        }
+        Player attacker = null;
+        LastHit hit = lastHits.get(victim.getUniqueId());
+        if (hit != null && System.currentTimeMillis() - hit.timestampMillis() <= 10_000L) {
+            attacker = Bukkit.getPlayer(hit.attackerId());
+        }
+        lastHits.remove(victim.getUniqueId());
+
+        String message;
+        if (attacker != null && attacker.isOnline()) {
+            message = "§c☠ §f" + victim.getName() + " §7è stato ucciso da §f" + attacker.getName() + "§7.";
+        } else {
+            message = switch (cause) {
+                case VOID -> "§c☠ §f" + victim.getName() + " §7è caduto nel vuoto.";
+                case FALL -> "§c☠ §f" + victim.getName() + " §7si è schiantato.";
+                case FIRE, FIRE_TICK, LAVA, HOT_FLOOR -> "§c☠ §f" + victim.getName() + " §7è finito arrosto.";
+                case PROJECTILE -> "§c☠ §f" + victim.getName() + " §7è stato colpito a distanza.";
+                case ENTITY_EXPLOSION, BLOCK_EXPLOSION -> "§c☠ §f" + victim.getName() + " §7è esploso.";
+                case DROWNING -> "§c☠ §f" + victim.getName() + " §7non sapeva nuotare.";
+                case SUFFOCATION -> "§c☠ §f" + victim.getName() + " §7è rimasto incastrato nei blocchi.";
+                default -> "§c☠ §f" + victim.getName() + " §7è stato eliminato.";
+            };
+        }
+        Bukkit.broadcastMessage(message);
     }
 
     private void forEachRoundViewer(ActiveRound round, java.util.function.Consumer<Player> action) {
@@ -1044,6 +1119,7 @@ public final class BedfightManager {
         inventory.setItem(1, unbreakableItem(Material.SHEARS, "§fCesoie", false));
         inventory.setItem(2, unbreakableItem(Material.WOODEN_AXE, "§fAscia", true));
         inventory.setItem(3, unbreakableItem(Material.WOODEN_PICKAXE, "§fPiccone", true));
+        inventory.setItem(4, unbreakableStack(wool, 64, chatColor + "Lana " + team.displayName));
         inventory.setItemInOffHand(unbreakableStack(wool, 64, chatColor + "Lana " + team.displayName));
         inventory.setHeldItemSlot(0);
         player.updateInventory();
@@ -1094,6 +1170,7 @@ public final class BedfightManager {
         cancelCountdown(round);
         cancelRoundClock(round);
         activeRound = null;
+        lastHits.clear();
 
         restoreArena(round);
 
@@ -1142,6 +1219,7 @@ public final class BedfightManager {
         cancelCountdown(round);
         cancelRoundClock(round);
         activeRound = null;
+        lastHits.clear();
         restoreArena(round);
         if (refund) {
             refundStakes(round.match);
@@ -1543,6 +1621,8 @@ public final class BedfightManager {
             this.displayName = displayName;
         }
     }
+
+    private record LastHit(UUID attackerId, long timestampMillis) { }
 
     private static final class ActiveRound {
         private final BedfightCoinflip match;

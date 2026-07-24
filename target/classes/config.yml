@@ -29,12 +29,12 @@ bedwars:
   # Invulnerabilità dopo l'inizio e dopo ogni rientro. 60 tick = 3 secondi.
   spawn-protection-ticks: 60
 
-  # Dopo 3 minuti entrambi i letti spariscono e non sono più disponibili respawn.
-  beds-auto-destroy-seconds: 180
+  # Dopo 5 minuti entrambi i letti spariscono e non sono più disponibili respawn.
+  beds-auto-destroy-seconds: 300
 
-  # Dopo 5 minuti parte il deathmatch. Il danno è espresso in punti vita
+  # Dopo 7 minuti parte il deathmatch. Il danno è espresso in punti vita
   # (2 punti vita = 1 cuore) e aumenta ogni secondo.
-  deathmatch-start-seconds: 300
+  deathmatch-start-seconds: 420
   deathmatch-starting-damage: 1.0
   deathmatch-damage-increase: 1.0
 
