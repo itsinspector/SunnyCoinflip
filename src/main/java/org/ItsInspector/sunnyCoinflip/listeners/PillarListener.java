@@ -1,280 +1,634 @@
 package org.ItsInspector.sunnyCoinflip.listeners;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
 import org.ItsInspector.sunnyCoinflip.SunnyCoinflip;
+import org.ItsInspector.sunnyCoinflip.models.Coinflip;
 import org.ItsInspector.sunnyCoinflip.models.PillarMatch;
+import org.ItsInspector.sunnyCoinflip.utils.ItemBuilder;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.Sound;
+import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.block.Block;
+import org.bukkit.boss.BarColor;
+import org.bukkit.boss.BarFlag;
+import org.bukkit.boss.BarStyle;
+import org.bukkit.boss.BossBar;
+import org.bukkit.entity.Egg;
+import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Snowball;
+import org.bukkit.entity.TNTPrimed;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntitySpawnEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.scheduler.BukkitRunnable;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
-
-/** Implementazione compatta della modalità Pillars inclusa nel progetto originale. */
-public final class PillarListener implements Listener {
+public class PillarListener implements Listener {
     private final SunnyCoinflip plugin;
-    private final Map<UUID, Snapshot> snapshots = new HashMap<>();
-    private BukkitTask countdownTask;
+    private final Random random = new Random();
+    private BossBar pillarBossBar;
 
     public PillarListener(SunnyCoinflip plugin) {
         this.plugin = plugin;
     }
 
-    public void startPillarMatch(Player opponent) {
-        PillarMatch match = plugin.getGameManager().getActivePillarMatch();
-        if (match == null || match.getOpponent() != null || match.isPlaying()) {
-            opponent.sendMessage("§cQuesto match Pillars non è disponibile.");
-            return;
-        }
-        Player creator = Bukkit.getPlayer(match.getCreator());
-        if (creator == null || !creator.isOnline()) {
-            plugin.getGameManager().setActivePillarMatch(null);
-            opponent.sendMessage("§cIl creator non è più online.");
-            return;
-        }
-        if (!SunnyCoinflip.getEconomy().has(creator, match.getAmount())
-                || !SunnyCoinflip.getEconomy().has(opponent, match.getAmount())) {
-            opponent.sendMessage("§cSaldo insufficiente di uno dei partecipanti.");
-            return;
-        }
-        Location first = plugin.getGameManager().getPillarFirst();
-        Location second = plugin.getGameManager().getPillarOpponent();
-        if (first == null || second == null) {
-            opponent.sendMessage("§cLe posizioni Pillars non sono configurate.");
-            return;
-        }
-
-        SunnyCoinflip.getEconomy().withdrawPlayer(creator, match.getAmount());
-        SunnyCoinflip.getEconomy().withdrawPlayer(opponent, match.getAmount());
-        match.setOpponent(opponent.getUniqueId());
-        match.setOpponentJoinTime(System.currentTimeMillis());
-        match.setStarted(true);
-        snapshots.put(creator.getUniqueId(), new Snapshot(creator));
-        snapshots.put(opponent.getUniqueId(), new Snapshot(opponent));
-        prepare(creator, first);
-        prepare(opponent, second);
-        startCountdown(match, creator, opponent);
-    }
-
-    private void startCountdown(PillarMatch expected, Player creator, Player opponent) {
-        final int[] seconds = {Math.max(1, plugin.getGameManager().getPillarCountdown())};
-        countdownTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            if (plugin.getGameManager().getActivePillarMatch() != expected) {
-                cancelCountdown();
-                return;
-            }
-            if (!creator.isOnline() || !opponent.isOnline()) {
-                finish(null, true, "§cMatch annullato: un partecipante è offline.");
-                return;
-            }
-            if (seconds[0] <= 0) {
-                cancelCountdown();
-                expected.setPlaying(true);
-                expected.setStartTime(System.currentTimeMillis());
-                creator.sendTitle("§aVIA!", "§7Rimani sul pillar", 0, 30, 10);
-                opponent.sendTitle("§aVIA!", "§7Rimani sul pillar", 0, 30, 10);
-                return;
-            }
-            creator.sendTitle("§e" + seconds[0], "§7Preparati", 0, 18, 2);
-            opponent.sendTitle("§e" + seconds[0], "§7Preparati", 0, 18, 2);
-            creator.playSound(creator.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 1.2f);
-            opponent.playSound(opponent.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 1.2f);
-            seconds[0]--;
-        }, 0L, 20L);
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler
     public void onMove(PlayerMoveEvent event) {
-        PillarMatch match = plugin.getGameManager().getActivePillarMatch();
-        if (match == null || !includes(match, event.getPlayer().getUniqueId()) || event.getTo() == null) return;
-        if (!match.isPlaying()) {
-            Location locked = event.getFrom().clone();
-            locked.setYaw(event.getTo().getYaw());
-            locked.setPitch(event.getTo().getPitch());
-            event.setTo(locked);
-            return;
-        }
-        if (event.getTo().getY() <= plugin.getGameManager().getMaxHeight()) {
-            finish(match.getCreator().equals(event.getPlayer().getUniqueId()) ? match.getOpponent() : match.getCreator(), false,
-                    "§c" + event.getPlayer().getName() + " è caduto dal pillar.");
+        PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+        if (match != null) {
+            Player player = event.getPlayer();
+            if (player.getUniqueId().equals(match.getCreator()) || player.getUniqueId().equals(match.getOpponent())) {
+                if (!match.isPlaying()) {
+                    Location from = event.getFrom();
+                    Location to = event.getTo();
+                    if (from.getX() != to.getX() || from.getZ() != to.getZ() || from.getY() != to.getY()) {
+                        event.setTo(from.setDirection(to.getDirection()));
+                        return;
+                    }
+                }
+
+                if (match.isStarted()) {
+                    long joinTime = player.getUniqueId().equals(match.getCreator()) ? match.getCreatorJoinTime() : match.getOpponentJoinTime();
+                    if (System.currentTimeMillis() - joinTime >= 500L) {
+                        if (event.getTo().getY() <= (double)-62.0F) {
+                            Player winner = player.getUniqueId().equals(match.getCreator()) ? Bukkit.getPlayer(match.getOpponent()) : Bukkit.getPlayer(match.getCreator());
+                            this.finishPillarMatch(winner, player, match);
+                        }
+                    }
+                }
+            }
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDamage(EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Player player)) return;
-        PillarMatch match = plugin.getGameManager().getActivePillarMatch();
-        if (match == null || !includes(match, player.getUniqueId())) return;
-        if (!match.isPlaying()) {
-            event.setCancelled(true);
-            return;
-        }
-        if (player.getHealth() - event.getFinalDamage() <= 0.0) {
-            event.setCancelled(true);
-            UUID winner = match.getCreator().equals(player.getUniqueId()) ? match.getOpponent() : match.getCreator();
-            finish(winner, false, "§c" + player.getName() + " è stato eliminato.");
+    @EventHandler
+    public void onBlockPlace(BlockPlaceEvent event) {
+        PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+        if (match != null && match.isStarted()) {
+            Player player = event.getPlayer();
+            if (player.getUniqueId().equals(match.getCreator()) || player.getUniqueId().equals(match.getOpponent())) {
+                int maxHeight = this.plugin.getGameManager().getMaxHeight();
+                if (event.getBlock().getY() > maxHeight) {
+                    event.setCancelled(true);
+                    player.sendMessage("§cNon puoi piazzare blocchi sopra l'altezza " + maxHeight + "!");
+                }
+
+            }
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDamageByEntity(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Player victim) || !(event.getDamager() instanceof Player attacker)) return;
-        PillarMatch match = plugin.getGameManager().getActivePillarMatch();
-        if (match == null) return;
-        if (includes(match, victim.getUniqueId()) != includes(match, attacker.getUniqueId())) event.setCancelled(true);
+    public void startPillarMatch(final PillarMatch match) {
+        match.setStarted(true);
+        final Player p1 = Bukkit.getPlayer(match.getCreator());
+        final Player p2 = Bukkit.getPlayer(match.getOpponent());
+        if (p1 != null && p2 != null) {
+            match.setPlaying(false);
+            (new BukkitRunnable() {
+                int countdown;
+
+                {
+                    this.countdown = PillarListener.this.plugin.getGameManager().getPillarCountdown();
+                }
+
+                public void run() {
+                    if (PillarListener.this.plugin.getGameManager().getActivePillarMatch() != match) {
+                        this.cancel();
+                    } else {
+                        if (this.countdown > 0) {
+                            if (this.countdown == 10 || this.countdown <= 10) {
+                                p1.sendMessage("§eʟᴀ ᴘᴀʀᴛɪᴛᴀ ɪɴɪᴢɪᴀ ɪɴ " + this.countdown + "...");
+                                p2.sendMessage("§eʟᴀ ᴘᴀʀᴛɪᴛᴀ ɪɴɪᴢɪᴀ ɪɴ " + this.countdown + "...");
+                                p1.playSound(p1, Sound.BLOCK_NOTE_BLOCK_PLING, 1.0F, 1.0F);
+                                p2.playSound(p2, Sound.BLOCK_NOTE_BLOCK_PLING, 1.0F, 1.0F);
+                            }
+
+                            --this.countdown;
+                        } else {
+                            this.cancel();
+                            p1.sendMessage("§aɪɴɪᴢɪᴏ!");
+                            p2.sendMessage("§aɪɴɪᴢɪᴏ!");
+                            p1.playSound(p1, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
+                            p2.playSound(p2, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
+                            p1.setHealth(p1.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                            p1.setFoodLevel(20);
+                            p2.setHealth(p2.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                            p2.setFoodLevel(20);
+                            (new BukkitRunnable() {
+                                // $FF: synthetic field
+                                final PillarMatch val$match;
+                                // $FF: synthetic field
+                                final Player val$p1;
+                                // $FF: synthetic field
+                                final Player val$p2;
+                                // $FF: synthetic field
+                                final <undefinedtype> this$1;
+
+                                {
+                                    this.val$match = var2;
+                                    this.val$p1 = var3;
+                                    this.val$p2 = var4;
+                                    this.this$1 = this$1;
+                                }
+
+                                public void run() {
+                                    this.val$match.setPlaying(true);
+                                    this.val$p1.setHealth(this.val$p1.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                                    this.val$p1.setFoodLevel(20);
+                                    this.val$p2.setHealth(this.val$p2.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                                    this.val$p2.setFoodLevel(20);
+                                    this.this$1.this$0.startDropping(this.val$p1, this.val$p2, this.val$match);
+                                    this.this$1.this$0.startDeathmatchTimer(this.val$match);
+                                }
+                            }).runTaskLater(PillarListener.this.plugin, 40L);
+                        }
+
+                    }
+                }
+            }).runTaskTimer(this.plugin, 0L, 20L);
+        } else {
+            this.plugin.getGameManager().setActivePillarMatch((PillarMatch)null);
+        }
+    }
+
+    private void startDropping(final Player p1, final Player p2, final PillarMatch match) {
+        if (this.pillarBossBar != null) {
+            this.pillarBossBar.removeAll();
+        }
+
+        this.pillarBossBar = Bukkit.createBossBar("§eᴘʀᴏѕѕɪᴍᴏ ᴏɢɢᴇᴛᴛᴏ: §f" + this.plugin.getGameManager().getItemDropInterval() / 20 + "s", BarColor.YELLOW, BarStyle.SOLID, new BarFlag[0]);
+        this.pillarBossBar.addPlayer(p1);
+        this.pillarBossBar.addPlayer(p2);
+        this.pillarBossBar.setVisible(true);
+        (new BukkitRunnable() {
+            int interval;
+            int current;
+
+            {
+                this.interval = PillarListener.this.plugin.getGameManager().getItemDropInterval();
+                this.current = this.interval;
+            }
+
+            public void run() {
+                if (PillarListener.this.plugin.getGameManager().getActivePillarMatch() != match) {
+                    PillarListener.this.pillarBossBar.removeAll();
+                    this.cancel();
+                } else {
+                    if (this.current <= 0) {
+                        if (!match.isDeathmatch()) {
+                            p1.getInventory().addItem(new ItemStack[]{PillarListener.this.getRandomPillarItem()});
+                            p2.getInventory().addItem(new ItemStack[]{PillarListener.this.getRandomPillarItem()});
+                        }
+
+                        this.current = this.interval;
+                    }
+
+                    double progress = (double)this.current / (double)this.interval;
+                    PillarListener.this.pillarBossBar.setProgress(Math.max((double)0.0F, Math.min((double)1.0F, progress)));
+                    int var10001 = this.current + 19;
+                    PillarListener.this.pillarBossBar.setTitle("§eᴘʀᴏѕѕɪᴍᴏ ᴏɢɢᴇᴛᴛᴏ: §f" + var10001 / 20 + "s");
+                    this.current -= 2;
+                }
+            }
+        }).runTaskTimer(this.plugin, 0L, 2L);
+    }
+
+    private ItemStack getRandomPillarItem() {
+        Material[] mats = Material.values();
+        Material mat = mats[this.random.nextInt(mats.length)];
+        int attempts = 0;
+
+        while(attempts < 1000) {
+            if (mat.isItem() && !mat.isAir()) {
+                String name = mat.name();
+                if (!name.contains("SPAWN_EGG") && !name.contains("DEBUG") && mat != Material.BEDROCK) {
+                    break;
+                }
+
+                mat = mats[this.random.nextInt(mats.length)];
+                ++attempts;
+            } else {
+                mat = mats[this.random.nextInt(mats.length)];
+                ++attempts;
+            }
+        }
+
+        if (!mat.isItem()) {
+            mat = Material.DIRT;
+        }
+
+        return new ItemStack(mat);
+    }
+
+    public void clearBossBar() {
+        if (this.pillarBossBar != null) {
+            this.pillarBossBar.removeAll();
+        }
+
+    }
+
+    public void handleServerShutdown() {
+        PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+        if (match != null) {
+            this.refundBets(match);
+            Player p1 = Bukkit.getPlayer(match.getCreator());
+            Player p2 = match.getOpponent() != null ? Bukkit.getPlayer(match.getOpponent()) : null;
+            if (p1 != null && p1.isOnline()) {
+                p1.getInventory().clear();
+                p1.setGameMode(GameMode.SURVIVAL);
+                p1.setHealth(p1.getMaxHealth());
+                p1.setFoodLevel(20);
+                Location respawn = this.plugin.getGameManager().getPlayerReturn(p1.getUniqueId());
+                if (respawn != null) {
+                    p1.teleport(respawn);
+                    this.plugin.getGameManager().removePlayerReturn(p1.getUniqueId());
+                }
+
+                p1.sendMessage("§cIl server si sta riavviando, la sfida Pillars è stata annullata e le scommesse rimborsate.");
+            }
+
+            if (p2 != null && p2.isOnline()) {
+                p2.getInventory().clear();
+                p2.setGameMode(GameMode.SURVIVAL);
+                p2.setHealth(p2.getMaxHealth());
+                p2.setFoodLevel(20);
+                Location respawn = this.plugin.getGameManager().getPlayerReturn(p2.getUniqueId());
+                if (respawn != null) {
+                    p2.teleport(respawn);
+                    this.plugin.getGameManager().removePlayerReturn(p2.getUniqueId());
+                }
+
+                p2.sendMessage("§cIl server si sta riavviando, la sfida Pillars è stata annullata e le scommesse rimborsate.");
+            }
+
+            Location center = this.plugin.getGameManager().getPillarFirst();
+            this.cleanupArena(center);
+        }
+
+        this.clearBossBar();
+    }
+
+    private void finishPillarMatch(final Player winner, final Player loser, PillarMatch match) {
+        this.plugin.getGameManager().setActivePillarMatch((PillarMatch)null);
+        if (this.pillarBossBar != null) {
+            this.pillarBossBar.removeAll();
+        }
+
+        double prize = match.getAmount() * this.plugin.getGameManager().getWinMultiplier();
+        final Location center = this.plugin.getGameManager().getPillarFirst();
+        if (winner != null && winner.isOnline()) {
+            winner.setGameMode(GameMode.SPECTATOR);
+            winner.getInventory().clear();
+            winner.setHealth(winner.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+            winner.setFoodLevel(20);
+            winner.playSound(winner, Sound.ENTITY_ENDER_DRAGON_DEATH, 0.5F, 1.0F);
+            winner.sendTitle(ItemBuilder.translate("§a§lVITTORIA!"), "", 10, 80, 10);
+            this.handleBets(winner, match);
+            SunnyCoinflip.getEconomy().withdrawPlayer(winner, match.getAmount());
+            SunnyCoinflip.getEconomy().depositPlayer(winner, prize);
+            Object[] var10002 = new Object[]{prize};
+            winner.sendMessage(ItemBuilder.translate("§aʜᴀɪ ɢᴜᴀᴅᴀɢɴᴀᴛᴏ §r§f\ue0d8 §e" + String.format("%.0f", var10002)));
+        }
+
+        if (loser != null && loser.isOnline()) {
+            loser.setGameMode(GameMode.SPECTATOR);
+            loser.getInventory().clear();
+            loser.setHealth(loser.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+            loser.playSound(loser, Sound.ENTITY_ENDER_DRAGON_DEATH, 0.5F, 1.0F);
+            loser.setFoodLevel(20);
+            loser.sendTitle(ItemBuilder.translate("§c§lSCONFITTA!"), "", 10, 80, 10);
+            SunnyCoinflip.getEconomy().withdrawPlayer(loser, match.getAmount());
+        }
+
+        (new BukkitRunnable() {
+            public void run() {
+                if (winner != null && winner.isOnline()) {
+                    winner.setGameMode(GameMode.SURVIVAL);
+                    Location respawn = PillarListener.this.plugin.getGameManager().getPlayerReturn(winner.getUniqueId());
+                    if (respawn != null) {
+                        winner.teleport(respawn);
+                        PillarListener.this.plugin.getGameManager().removePlayerReturn(winner.getUniqueId());
+                    }
+                }
+
+                if (loser != null && loser.isOnline()) {
+                    loser.setGameMode(GameMode.SURVIVAL);
+                    Location respawn = PillarListener.this.plugin.getGameManager().getPlayerReturn(loser.getUniqueId());
+                    if (respawn != null) {
+                        loser.teleport(respawn);
+                        PillarListener.this.plugin.getGameManager().removePlayerReturn(loser.getUniqueId());
+                    }
+                }
+
+                PillarListener.this.cleanupArena(center);
+            }
+        }).runTaskLater(this.plugin, 60L);
+    }
+
+    private void cleanupArena(Location center) {
+        if (center != null) {
+            World world = center.getWorld();
+            if (world != null) {
+                List<Location> cleanupLocs = new ArrayList();
+                cleanupLocs.add(center);
+                if (this.plugin.getGameManager().getPillarOpponent() != null) {
+                    cleanupLocs.add(this.plugin.getGameManager().getPillarOpponent());
+                }
+
+                int radius = 20;
+                int minY = -63;
+                int maxY = this.plugin.getGameManager().getMaxHeight() + 5;
+
+                for(Location loc : cleanupLocs) {
+                    if (loc.getWorld() != null && loc.getWorld().getName().equals(world.getName())) {
+                        int minX = loc.getBlockX() - radius;
+                        int maxX = loc.getBlockX() + radius;
+                        int minZ = loc.getBlockZ() - radius;
+                        int maxZ = loc.getBlockZ() + radius;
+
+                        for(int x = minX; x <= maxX; ++x) {
+                            for(int z = minZ; z <= maxZ; ++z) {
+                                for(int y = minY; y <= maxY; ++y) {
+                                    Block block = world.getBlockAt(x, y, z);
+                                    if (block.getType() != Material.AIR && block.getType() != Material.BEDROCK) {
+                                        block.setType(Material.AIR);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                world.getNearbyEntities(center, (double)50.0F, (double)100.0F, (double)50.0F).forEach((entity) -> {
+                    if (!(entity instanceof Player)) {
+                        entity.remove();
+                    }
+
+                });
+            }
+        }
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        PillarMatch match = plugin.getGameManager().getActivePillarMatch();
-        if (match == null || !includes(match, event.getPlayer().getUniqueId())) return;
-        UUID winner = match.getCreator().equals(event.getPlayer().getUniqueId()) ? match.getOpponent() : match.getCreator();
-        finish(winner, match.getOpponent() == null, "§c" + event.getPlayer().getName() + " si è disconnesso.");
+        this.handlePillarExit(event.getPlayer(), false);
     }
 
-    public void handleServerShutdown() {
-        if (plugin.getGameManager().getActivePillarMatch() != null) finish(null, true, null);
+    @EventHandler
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        this.handlePillarExit(event.getPlayer(), true);
     }
 
-    private void prepare(Player player, Location location) {
-        player.teleport(location.clone());
-        player.setGameMode(GameMode.SURVIVAL);
-        player.setAllowFlight(false);
-        player.setFlying(false);
-        player.getInventory().clear();
-        player.getInventory().addItem(new ItemStack(Material.STICK));
-        player.getInventory().addItem(new ItemStack(Material.SNOWBALL, 16));
-        player.setFoodLevel(20);
-        player.setSaturation(20.0f);
-        restoreHealth(player);
-        Bukkit.getScheduler().runTask(plugin, () -> restoreHealth(player));
+    private void handlePillarExit(Player player, boolean isWorldChange) {
+        PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+        if (match != null) {
+            UUID playerUUID = player.getUniqueId();
+            if (playerUUID.equals(match.getCreator()) || match.getOpponent() != null && playerUUID.equals(match.getOpponent())) {
+                if (isWorldChange) {
+                    long joinTime = playerUUID.equals(match.getCreator()) ? match.getCreatorJoinTime() : match.getOpponentJoinTime();
+                    if (System.currentTimeMillis() - joinTime < 500L) {
+                        return;
+                    }
+                }
+
+                if (match.isPlaying()) {
+                    Player winner = playerUUID.equals(match.getCreator()) ? Bukkit.getPlayer(match.getOpponent()) : Bukkit.getPlayer(match.getCreator());
+                    this.finishPillarMatch(winner, player, match);
+                } else {
+                    this.refundBets(match);
+                    this.plugin.getGameManager().setActivePillarMatch((PillarMatch)null);
+                    UUID otherUUID = playerUUID.equals(match.getCreator()) ? match.getOpponent() : match.getCreator();
+                    if (player.isOnline()) {
+                        player.setHealth(player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                        player.setFoodLevel(20);
+                        Location respawn = this.plugin.getGameManager().getPlayerReturn(playerUUID);
+                        if (respawn != null) {
+                            player.teleport(respawn);
+                            this.plugin.getGameManager().removePlayerReturn(playerUUID);
+                        }
+                    }
+
+                    if (otherUUID != null) {
+                        Player other = Bukkit.getPlayer(otherUUID);
+                        if (other != null && other.isOnline()) {
+                            other.setHealth(other.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                            other.setFoodLevel(20);
+                            other.sendMessage("§cLo sfidante è uscito o la partita è stata annullata.");
+                            Location respawn = this.plugin.getGameManager().getPlayerReturn(otherUUID);
+                            if (respawn != null) {
+                                other.teleport(respawn);
+                                this.plugin.getGameManager().removePlayerReturn(otherUUID);
+                            }
+                        }
+                    }
+
+                    if (this.plugin.getGameManager().getPillarFirst() != null) {
+                        this.cleanupArena(this.plugin.getGameManager().getPillarFirst());
+                    }
+                }
+            }
+
+        }
     }
 
-    private void finish(UUID winnerId, boolean refund, String message) {
-        PillarMatch match = plugin.getGameManager().getActivePillarMatch();
-        if (match == null) return;
-        plugin.getGameManager().setActivePillarMatch(null);
-        cancelCountdown();
-        if (message != null) {
-            for (UUID id : participantIds(match)) {
-                Player player = Bukkit.getPlayer(id);
-                if (player != null) player.sendMessage(message);
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        Location respawn = this.plugin.getGameManager().getPlayerReturn(player.getUniqueId());
+        if (respawn != null) {
+            player.setHealth(player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+            player.setFoodLevel(20);
+            player.teleport(respawn);
+            this.plugin.getGameManager().removePlayerReturn(player.getUniqueId());
+        }
+
+    }
+
+    @EventHandler
+    public void onDamage(EntityDamageEvent event) {
+        if (event.getEntity() instanceof Player) {
+            Player player = (Player)event.getEntity();
+            PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+            if (match != null) {
+                if (player.getUniqueId().equals(match.getCreator()) || player.getUniqueId().equals(match.getOpponent())) {
+                    if (!match.isPlaying()) {
+                        event.setCancelled(true);
+                    } else {
+                        if (player.getHealth() - event.getFinalDamage() < (double)1.0F) {
+                            event.setCancelled(true);
+                            player.setHealth((double)1.0F);
+                            Player winner = player.getUniqueId().equals(match.getCreator()) ? Bukkit.getPlayer(match.getOpponent()) : Bukkit.getPlayer(match.getCreator());
+                            this.finishPillarMatch(winner, player, match);
+                        }
+
+                    }
+                }
             }
         }
-        if (match.getOpponent() != null) {
-            if (refund || winnerId == null) {
-                SunnyCoinflip.getEconomy().depositPlayer(Bukkit.getOfflinePlayer(match.getCreator()), match.getAmount());
-                SunnyCoinflip.getEconomy().depositPlayer(Bukkit.getOfflinePlayer(match.getOpponent()), match.getAmount());
-                refundBets(match);
-            } else {
-                SunnyCoinflip.getEconomy().depositPlayer(Bukkit.getOfflinePlayer(winnerId), match.getAmount() * 2.0);
-                payBets(match, winnerId);
-                Player winner = Bukkit.getPlayer(winnerId);
-                if (winner != null) winner.sendMessage("§6Hai vinto il match Pillars!");
+    }
+
+    @EventHandler
+    public void onProjectileHit(EntityDamageByEntityEvent event) {
+        if (event.getDamager() instanceof Snowball || event.getDamager() instanceof Egg) {
+            if (event.getEntity() instanceof Player) {
+                Player victim = (Player)event.getEntity();
+                PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+                if (match != null && match.isStarted()) {
+                    if (victim.getUniqueId().equals(match.getCreator()) || victim.getUniqueId().equals(match.getOpponent())) {
+                        event.setDamage(0.01);
+                    }
+                }
             }
         }
-        for (Map.Entry<UUID, Snapshot> entry : new HashMap<>(snapshots).entrySet()) {
-            Player player = Bukkit.getPlayer(entry.getKey());
-            if (player != null && player.isOnline()) entry.getValue().restore(player);
+    }
+
+    @EventHandler
+    public void onMobSpawn(EntitySpawnEvent event) {
+        if (event.getEntity() instanceof Mob) {
+            Mob mob = (Mob)event.getEntity();
+            PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+            if (match != null && match.isStarted()) {
+                if (this.plugin.getGameManager().getPillarFirst() != null && event.getLocation().getWorld().equals(this.plugin.getGameManager().getPillarFirst().getWorld())) {
+                    double dist1 = event.getLocation().distanceSquared(this.plugin.getGameManager().getPillarFirst());
+                    double dist2 = event.getLocation().distanceSquared(this.plugin.getGameManager().getPillarOpponent());
+                    if (dist1 < (double)100.0F || dist2 < (double)100.0F) {
+                        Player p1 = Bukkit.getPlayer(match.getCreator());
+                        Player p2 = Bukkit.getPlayer(match.getOpponent());
+                        if (p1 != null && p2 != null) {
+                            if (dist1 < dist2) {
+                                mob.setTarget(p2);
+                            } else {
+                                mob.setTarget(p1);
+                            }
+                        }
+                    }
+                }
+
+            }
         }
-        snapshots.clear();
+    }
+
+    private void startDeathmatchTimer(final PillarMatch match) {
+        (new BukkitRunnable() {
+            int time = 180;
+
+            public void run() {
+                if (PillarListener.this.plugin.getGameManager().getActivePillarMatch() != match) {
+                    this.cancel();
+                } else {
+                    if (this.time <= 0) {
+                        match.setDeathmatch(true);
+                        PillarListener.this.clearBossBar();
+                        Player p1 = Bukkit.getPlayer(match.getCreator());
+                        Player p2 = Bukkit.getPlayer(match.getOpponent());
+                        if (p1 != null) {
+                            p1.sendMessage("§c§l§nDEATHMATCH!§7 Iniziano a piovere TNT!");
+                        }
+
+                        if (p2 != null) {
+                            p2.sendMessage("§c§l§nDEATHMATCH!§7 Iniziano a piovere TNT!");
+                        }
+
+                        PillarListener.this.startTNTShower(match);
+                        this.cancel();
+                    }
+
+                    --this.time;
+                }
+            }
+        }).runTaskTimer(this.plugin, 0L, 20L);
+    }
+
+    private void startTNTShower(final PillarMatch match) {
+        (new BukkitRunnable() {
+            public void run() {
+                if (PillarListener.this.plugin.getGameManager().getActivePillarMatch() == match && match.isDeathmatch()) {
+                    Player p1 = Bukkit.getPlayer(match.getCreator());
+                    Player p2 = Bukkit.getPlayer(match.getOpponent());
+                    if (p1 != null && p1.isOnline()) {
+                        PillarListener.this.spawnTNT(p1.getLocation());
+                    }
+
+                    if (p2 != null && p2.isOnline()) {
+                        PillarListener.this.spawnTNT(p2.getLocation());
+                    }
+
+                } else {
+                    this.cancel();
+                }
+            }
+        }).runTaskTimer(this.plugin, 0L, 60L);
+    }
+
+    private void spawnTNT(Location loc) {
+        Location tntLoc = loc.clone().add(this.random.nextDouble() * (double)6.0F - (double)3.0F, (double)12.0F, this.random.nextDouble() * (double)6.0F - (double)3.0F);
+        loc.getWorld().spawn(tntLoc, TNTPrimed.class);
+    }
+
+    private void handleBets(Player winner, PillarMatch match) {
+        if (winner != null) {
+            Map<UUID, Double> winningBets = winner.getUniqueId().equals(match.getCreator()) ? match.getCreatorBets() : match.getOpponentBets();
+
+            for(Map.Entry<UUID, Double> entry : winningBets.entrySet()) {
+                OfflinePlayer bettor = Bukkit.getOfflinePlayer((UUID)entry.getKey());
+                double prize = (Double)entry.getValue() * this.plugin.getGameManager().getWinMultiplier();
+                SunnyCoinflip.getEconomy().depositPlayer(bettor, prize);
+                if (bettor.isOnline()) {
+                    Player var10000 = (Player)bettor;
+                    Object[] var10002 = new Object[]{prize};
+                    var10000.sendMessage("§aIl giocatore su cui hai scommesso ha vinto! Hai ricevuto §r§f\ue0d8 §e" + String.format("%.0f", var10002) + "§a!");
+                }
+            }
+
+        }
     }
 
     private void refundBets(PillarMatch match) {
-        for (Map.Entry<UUID, Double> bet : match.getCreatorBets().entrySet()) {
-            SunnyCoinflip.getEconomy().depositPlayer(Bukkit.getOfflinePlayer(bet.getKey()), bet.getValue());
-        }
-        for (Map.Entry<UUID, Double> bet : match.getOpponentBets().entrySet()) {
-            SunnyCoinflip.getEconomy().depositPlayer(Bukkit.getOfflinePlayer(bet.getKey()), bet.getValue());
-        }
-    }
-
-    private void payBets(PillarMatch match, UUID winnerId) {
-        Map<UUID, Double> winners = winnerId.equals(match.getCreator()) ? match.getCreatorBets() : match.getOpponentBets();
-        Map<UUID, Double> losers = winnerId.equals(match.getCreator()) ? match.getOpponentBets() : match.getCreatorBets();
-        double winnerPool = winners.values().stream().mapToDouble(Double::doubleValue).sum();
-        double loserPool = losers.values().stream().mapToDouble(Double::doubleValue).sum();
-        if (winnerPool <= 0.0) return;
-        for (Map.Entry<UUID, Double> bet : winners.entrySet()) {
-            double payout = bet.getValue() + loserPool * (bet.getValue() / winnerPool);
-            SunnyCoinflip.getEconomy().depositPlayer(Bukkit.getOfflinePlayer(bet.getKey()), payout);
-        }
-    }
-
-    private boolean includes(PillarMatch match, UUID id) {
-        return match.getCreator().equals(id) || (match.getOpponent() != null && match.getOpponent().equals(id));
-    }
-
-    private UUID[] participantIds(PillarMatch match) {
-        return match.getOpponent() == null ? new UUID[]{match.getCreator()} : new UUID[]{match.getCreator(), match.getOpponent()};
-    }
-
-    private void restoreHealth(Player player) {
-        if (!player.isOnline() || player.isDead()) return;
-        AttributeInstance attribute = player.getAttribute(Attribute.GENERIC_MAX_HEALTH);
-        player.setHealth(attribute == null ? 20.0 : attribute.getValue());
-    }
-
-    private void cancelCountdown() {
-        if (countdownTask != null && !countdownTask.isCancelled()) countdownTask.cancel();
-        countdownTask = null;
-    }
-
-    private static final class Snapshot {
-        private final Location location;
-        private final ItemStack[] storage;
-        private final ItemStack[] armor;
-        private final ItemStack offhand;
-        private final GameMode gameMode;
-        private final double health;
-        private final int food;
-        private final boolean allowFlight;
-        private final boolean flying;
-
-        private Snapshot(Player player) {
-            location = player.getLocation().clone();
-            storage = cloneItems(player.getInventory().getStorageContents());
-            armor = cloneItems(player.getInventory().getArmorContents());
-            offhand = player.getInventory().getItemInOffHand().clone();
-            gameMode = player.getGameMode();
-            health = player.getHealth();
-            food = player.getFoodLevel();
-            allowFlight = player.getAllowFlight();
-            flying = player.isFlying();
+        for(Map.Entry<UUID, Double> entry : match.getCreatorBets().entrySet()) {
+            SunnyCoinflip.getEconomy().depositPlayer(Bukkit.getOfflinePlayer((UUID)entry.getKey()), (Double)entry.getValue());
+            Player bettor = Bukkit.getPlayer((UUID)entry.getKey());
+            if (bettor != null) {
+                bettor.sendMessage("§cLa sfida è stata annullata, la tua scommessa è stata rimborsata.");
+            }
         }
 
-        private void restore(Player player) {
-            player.teleport(location);
-            player.setGameMode(gameMode);
-            player.getInventory().setStorageContents(cloneItems(storage));
-            player.getInventory().setArmorContents(cloneItems(armor));
-            player.getInventory().setItemInOffHand(offhand.clone());
-            player.setFoodLevel(food);
-            AttributeInstance attribute = player.getAttribute(Attribute.GENERIC_MAX_HEALTH);
-            double max = attribute == null ? 20.0 : attribute.getValue();
-            player.setHealth(Math.max(1.0, Math.min(health, max)));
-            player.setAllowFlight(allowFlight || gameMode == GameMode.CREATIVE || gameMode == GameMode.SPECTATOR);
-            if (player.getAllowFlight()) player.setFlying(flying);
+        for(Map.Entry<UUID, Double> entry : match.getOpponentBets().entrySet()) {
+            SunnyCoinflip.getEconomy().depositPlayer(Bukkit.getOfflinePlayer((UUID)entry.getKey()), (Double)entry.getValue());
+            Player bettor = Bukkit.getPlayer((UUID)entry.getKey());
+            if (bettor != null) {
+                bettor.sendMessage("§cLa sfida è stata annullata, la tua scommessa è stata rimborsata.");
+            }
         }
 
-        private static ItemStack[] cloneItems(ItemStack[] source) {
-            ItemStack[] result = new ItemStack[source.length];
-            for (int i = 0; i < source.length; i++) result[i] = source[i] == null ? null : source[i].clone();
-            return result;
+    }
+
+    @EventHandler
+    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        Player player = event.getPlayer();
+        if (this.plugin.getGameManager().isRestrictedWorld(player.getWorld())) {
+            Coinflip coinflip = this.plugin.getGameManager().getCoinflip(player.getUniqueId());
+            if (coinflip != null) {
+                this.plugin.getGameManager().removeCoinflip(player.getUniqueId());
+                SunnyCoinflip.getEconomy().depositPlayer(player, coinflip.getAmount());
+                Object[] var10002 = new Object[]{coinflip.getAmount()};
+                player.sendMessage("§cIl tuo coinflip è stato annullato. §r§f\ue0d8 §e" + String.format("%.0f", var10002) + "§c è stato restituito.");
+            }
         }
+
     }
 }

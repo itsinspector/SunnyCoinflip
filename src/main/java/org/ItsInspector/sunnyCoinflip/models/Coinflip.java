@@ -12,11 +12,26 @@ public class Coinflip {
         this.creator = creator;
         this.creatorName = creatorName;
         this.amount = amount;
+        this.active = false;
     }
 
-    public UUID getCreator() { return creator; }
-    public String getCreatorName() { return creatorName; }
-    public double getAmount() { return amount; }
-    public boolean isActive() { return active; }
-    public void setActive(boolean active) { this.active = active; }
+    public UUID getCreator() {
+        return this.creator;
+    }
+
+    public String getCreatorName() {
+        return this.creatorName;
+    }
+
+    public double getAmount() {
+        return this.amount;
+    }
+
+    public boolean isActive() {
+        return this.active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
+    }
 }

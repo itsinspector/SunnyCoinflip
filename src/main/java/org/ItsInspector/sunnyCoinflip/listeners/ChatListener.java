@@ -1,115 +1,178 @@
 package org.ItsInspector.sunnyCoinflip.listeners;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 import org.ItsInspector.sunnyCoinflip.SunnyCoinflip;
 import org.ItsInspector.sunnyCoinflip.models.Coinflip;
 import org.ItsInspector.sunnyCoinflip.models.PillarMatch;
 import org.ItsInspector.sunnyCoinflip.utils.NumberParser;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 
-import java.util.HashSet;
-import java.util.Set;
-import java.util.UUID;
-
-/** Gestisce l'inserimento degli importi tramite chat. */
-public final class ChatListener implements Listener {
+public class ChatListener implements Listener {
     private final SunnyCoinflip plugin;
-    private final Set<UUID> awaitingNormalAmount = new HashSet<>();
-    private final Set<UUID> awaitingPillarAmount = new HashSet<>();
+    private final Set<UUID> pendingCreation = Collections.synchronizedSet(new HashSet());
+    private final Set<UUID> pendingPillar = Collections.synchronizedSet(new HashSet());
 
     public ChatListener(SunnyCoinflip plugin) {
         this.plugin = plugin;
     }
 
-    public void awaitNormalAmount(Player player) {
-        awaitingNormalAmount.add(player.getUniqueId());
-        player.closeInventory();
-        player.sendMessage("§eScrivi in chat l'importo del coinflip classico, oppure §fcancel§e.");
+    public void addPending(UUID uuid) {
+        this.pendingCreation.add(uuid);
     }
 
-    public void awaitPillarAmount(Player player) {
-        awaitingPillarAmount.add(player.getUniqueId());
-        player.closeInventory();
-        player.sendMessage("§eScrivi in chat l'importo del coinflip Pillars, oppure §fcancel§e.");
+    public void addPendingPillar(UUID uuid) {
+        this.pendingPillar.add(uuid);
     }
 
     @EventHandler
     public void onChat(AsyncPlayerChatEvent event) {
         Player player = event.getPlayer();
-        UUID id = player.getUniqueId();
-        boolean bedwars = plugin.getBedfightManager().isAwaitingCreateAmount(id);
-        boolean normal = awaitingNormalAmount.remove(id);
-        boolean pillars = awaitingPillarAmount.remove(id);
-        if (!bedwars && !normal && !pillars) return;
+        if (this.pendingCreation.contains(player.getUniqueId())) {
+            event.setCancelled(true);
+            this.pendingCreation.remove(player.getUniqueId());
+            String message = event.getMessage();
 
-        event.setCancelled(true);
-        String message = event.getMessage();
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            if (bedwars) {
-                plugin.getBedfightManager().handleCreateAmountChat(player, message);
+            try {
+                double amount = NumberParser.parseNumber(message);
+                double maxAmount = this.plugin.getGameManager().getMaxAmount();
+                if (amount <= (double)0.0F || amount > maxAmount) {
+                    Object[] var14 = new Object[]{maxAmount};
+                    player.sendMessage("§cL'importo deve essere tra 1 e " + String.format("%.0f", var14) + ".");
+                    return;
+                }
+
+                Bukkit.getScheduler().runTask(this.plugin, () -> {
+                    if (SunnyCoinflip.getEconomy().getBalance(player) < amount) {
+                        player.sendMessage("§cNon hai abbastanza soldi!");
+                    } else if (this.plugin.getGameManager().getCoinflip(player.getUniqueId()) != null) {
+                        player.sendMessage("§cHai già un coinflip attivo!");
+                    } else {
+                        Coinflip cf = new Coinflip(player.getUniqueId(), player.getName(), amount);
+                        this.plugin.getGameManager().addCoinflip(cf);
+                        player.sendMessage("§aCoinflip creato con successo!");
+                    }
+                });
+            } catch (IllegalArgumentException e) {
+                player.sendMessage("§c" + e.getMessage());
+            }
+        } else if (this.pendingPillar.contains(player.getUniqueId())) {
+            event.setCancelled(true);
+            this.pendingPillar.remove(player.getUniqueId());
+            String message = event.getMessage();
+
+            try {
+                double amount = NumberParser.parseNumber(message);
+                double maxAmount = this.plugin.getGameManager().getMaxAmount();
+                if (amount <= (double)0.0F || amount > maxAmount) {
+                    Object[] var10002 = new Object[]{maxAmount};
+                    player.sendMessage("§cL'importo deve essere tra 1 e " + String.format("%.0f", var10002) + ".");
+                    return;
+                }
+
+                Location returnLoc = player.getLocation();
+                Bukkit.getScheduler().runTask(this.plugin, () -> {
+                    if (SunnyCoinflip.getEconomy().getBalance(player) < amount) {
+                        player.sendMessage("§cNon hai abbastanza soldi!");
+                    } else if (this.plugin.getGameManager().getActivePillarMatch() != null) {
+                        player.sendMessage("§cC'è già una partita di Pillars attiva o in attesa!");
+                    } else if (this.plugin.getGameManager().getCoinflip(player.getUniqueId()) != null) {
+                        player.sendMessage("§cHai già un coinflip attivo, non puoi partecipare ai Pillars!");
+                    } else {
+                        this.plugin.getGameManager().setPlayerReturn(player.getUniqueId(), returnLoc);
+                        player.teleport(this.plugin.getGameManager().getPillarFirst());
+                        player.setHealth(player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                        player.setFoodLevel(20);
+                        PillarMatch match = new PillarMatch(player.getUniqueId(), player.getLocation(), amount);
+                        match.setCreatorJoinTime(System.currentTimeMillis());
+                        this.plugin.getGameManager().setActivePillarMatch(match);
+                        Object[] var10002 = new Object[]{amount};
+                        player.sendMessage("§aPillar creato con successo! In attesa di uno sfidante per §r§f\ue0d8 §e" + String.format("%.0f", var10002));
+                    }
+                });
+            } catch (IllegalArgumentException e) {
+                player.sendMessage("§c" + e.getMessage());
+            }
+        }
+
+    }
+
+    public void createCoinflipDirect(Player player, String amountStr) {
+        try {
+            double amount = NumberParser.parseNumber(amountStr);
+            double maxAmount = this.plugin.getGameManager().getMaxAmount();
+            if (amount <= (double)0.0F || amount > maxAmount) {
+                Object[] var9 = new Object[]{maxAmount};
+                player.sendMessage("§cL'importo deve essere tra 1 e " + String.format("%.0f", var9) + ".");
                 return;
             }
-            if (message.equalsIgnoreCase("cancel") || message.equalsIgnoreCase("annulla")) {
-                player.sendMessage("§eCreazione annullata.");
+
+            if (SunnyCoinflip.getEconomy().getBalance(player) < amount) {
+                player.sendMessage("§cNon hai abbastanza soldi!");
                 return;
             }
-            if (normal) createCoinflipDirect(player, message);
-            else createPillarDirect(player, message);
-        });
+
+            if (this.plugin.getGameManager().getCoinflip(player.getUniqueId()) != null) {
+                player.sendMessage("§cHai già un coinflip attivo!");
+                return;
+            }
+
+            Coinflip cf = new Coinflip(player.getUniqueId(), player.getName(), amount);
+            this.plugin.getGameManager().addCoinflip(cf);
+            Object[] var10002 = new Object[]{amount};
+            player.sendMessage("§aCoinflip creato con successo per §r§f\ue0d8 §e" + String.format("%.0f", var10002) + "§a!");
+        } catch (IllegalArgumentException e) {
+            player.sendMessage("§c" + e.getMessage());
+        }
+
     }
 
-    public void createCoinflipDirect(Player player, String rawAmount) {
-        double amount;
+    public void createPillarDirect(Player player, String amountStr) {
         try {
-            amount = NumberParser.parseNumber(rawAmount);
-        } catch (IllegalArgumentException exception) {
-            player.sendMessage("§c" + exception.getMessage());
-            return;
-        }
-        if (!validAmount(player, amount)) return;
-        if (plugin.getGameManager().getCoinflip(player.getUniqueId()) != null) {
-            player.sendMessage("§cHai già un coinflip classico attivo.");
-            return;
-        }
-        plugin.getGameManager().addCoinflip(new Coinflip(player.getUniqueId(), player.getName(), amount));
-        player.sendMessage("§aCoinflip classico creato per §f" + String.format("%.0f", amount) + "§a.");
-    }
+            double amount = NumberParser.parseNumber(amountStr);
+            double maxAmount = this.plugin.getGameManager().getMaxAmount();
+            if (amount <= (double)0.0F || amount > maxAmount) {
+                Object[] var10 = new Object[]{maxAmount};
+                player.sendMessage("§cL'importo deve essere tra 1 e " + String.format("%.0f", var10) + ".");
+                return;
+            }
 
-    public void createPillarDirect(Player player, String rawAmount) {
-        double amount;
-        try {
-            amount = NumberParser.parseNumber(rawAmount);
-        } catch (IllegalArgumentException exception) {
-            player.sendMessage("§c" + exception.getMessage());
-            return;
-        }
-        if (!validAmount(player, amount)) return;
-        if (plugin.getGameManager().getActivePillarMatch() != null) {
-            player.sendMessage("§cEsiste già un match Pillars disponibile o in corso.");
-            return;
-        }
-        if (plugin.getGameManager().getPillarFirst() == null || plugin.getGameManager().getPillarOpponent() == null) {
-            player.sendMessage("§cLe posizioni Pillars non sono configurate.");
-            return;
-        }
-        PillarMatch match = new PillarMatch(player.getUniqueId(), player.getLocation().clone(), amount);
-        match.setCreatorJoinTime(System.currentTimeMillis());
-        plugin.getGameManager().setActivePillarMatch(match);
-        player.sendMessage("§aMatch Pillars creato per §f" + String.format("%.0f", amount) + "§a.");
-    }
+            if (SunnyCoinflip.getEconomy().getBalance(player) < amount) {
+                player.sendMessage("§cNon hai abbastanza soldi!");
+                return;
+            }
 
-    private boolean validAmount(Player player, double amount) {
-        if (amount <= 0 || amount > plugin.getGameManager().getMaxAmount()) {
-            player.sendMessage("§cImporto non valido.");
-            return false;
+            if (this.plugin.getGameManager().getActivePillarMatch() != null) {
+                player.sendMessage("§cC'è già una partita di Pillars attiva o in attesa!");
+                return;
+            }
+
+            if (this.plugin.getGameManager().getCoinflip(player.getUniqueId()) != null) {
+                player.sendMessage("§cHai già un coinflip attivo, non puoi partecipare ai Pillars!");
+                return;
+            }
+
+            Location returnLoc = player.getLocation();
+            this.plugin.getGameManager().setPlayerReturn(player.getUniqueId(), returnLoc);
+            player.teleport(this.plugin.getGameManager().getPillarFirst());
+            player.setHealth(player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+            player.setFoodLevel(20);
+            PillarMatch match = new PillarMatch(player.getUniqueId(), player.getLocation(), amount);
+            match.setCreatorJoinTime(System.currentTimeMillis());
+            this.plugin.getGameManager().setActivePillarMatch(match);
+            Object[] var10002 = new Object[]{amount};
+            player.sendMessage("§aPillar creato con successo! In attesa di uno sfidante per §r§f\ue0d8 §e" + String.format("%.0f", var10002));
+        } catch (IllegalArgumentException e) {
+            player.sendMessage("§c" + e.getMessage());
         }
-        if (!SunnyCoinflip.getEconomy().has(player, amount)) {
-            player.sendMessage("§cNon hai abbastanza denaro.");
-            return false;
-        }
-        return true;
+
     }
 }

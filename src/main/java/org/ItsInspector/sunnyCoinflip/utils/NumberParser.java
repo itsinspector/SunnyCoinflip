@@ -1,27 +1,28 @@
 package org.ItsInspector.sunnyCoinflip.utils;
 
-public final class NumberParser {
-    private NumberParser() {}
+public class NumberParser {
+    public static double parseNumber(String input) throws IllegalArgumentException {
+        if (input != null && !input.isEmpty()) {
+            String normalized = input.trim().toLowerCase();
+            double multiplier = (double)1.0F;
+            if (normalized.endsWith("k")) {
+                multiplier = (double)1000.0F;
+                normalized = normalized.substring(0, normalized.length() - 1);
+            } else if (normalized.endsWith("m")) {
+                multiplier = (double)1000000.0F;
+                normalized = normalized.substring(0, normalized.length() - 1);
+            } else if (normalized.endsWith("b")) {
+                multiplier = (double)1.0E9F;
+                normalized = normalized.substring(0, normalized.length() - 1);
+            }
 
-    public static double parseNumber(String input) {
-        if (input == null || input.isBlank()) {
-            throw new IllegalArgumentException("Inserisci un numero valido.");
-        }
-        String normalized = input.trim().toLowerCase();
-        double multiplier = 1.0;
-        if (normalized.endsWith("k")) {
-            multiplier = 1_000.0;
-            normalized = normalized.substring(0, normalized.length() - 1);
-        } else if (normalized.endsWith("m")) {
-            multiplier = 1_000_000.0;
-            normalized = normalized.substring(0, normalized.length() - 1);
-        } else if (normalized.endsWith("b")) {
-            multiplier = 1_000_000_000.0;
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        try {
-            return Double.parseDouble(normalized) * multiplier;
-        } catch (NumberFormatException exception) {
+            try {
+                double value = Double.parseDouble(normalized);
+                return value * multiplier;
+            } catch (NumberFormatException var6) {
+                throw new IllegalArgumentException("Inserisci un numero valido.");
+            }
+        } else {
             throw new IllegalArgumentException("Inserisci un numero valido.");
         }
     }

@@ -1,30 +1,41 @@
 package org.ItsInspector.sunnyCoinflip.listeners;
 
+import java.util.Locale;
 import org.ItsInspector.sunnyCoinflip.SunnyCoinflip;
 import org.ItsInspector.sunnyCoinflip.managers.BedfightManager;
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
-import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerKickEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.projectiles.ProjectileSource;
 
-/** Listener della modalità BedWars. */
 public final class BedfightListener implements Listener {
     private final SunnyCoinflip plugin;
 
@@ -33,169 +44,342 @@ public final class BedfightListener implements Listener {
     }
 
     private BedfightManager manager() {
-        return plugin.getBedfightManager();
+        return this.plugin.getBedfightManager();
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
-    public void onMove(PlayerMoveEvent event) {
-        Location to = event.getTo();
-        if (to == null) return;
+    @EventHandler(
+            priority = EventPriority.HIGHEST
+    )
+    public void onChatAmount(AsyncPlayerChatEvent event) {
         Player player = event.getPlayer();
-
-        // Il movimento bloccato durante il countdown non deve consumare la protezione.
-        if (!manager().canMoveDuringCountdown(player, event.getFrom(), to)) {
-            Location locked = event.getFrom().clone();
-            locked.setYaw(to.getYaw());
-            locked.setPitch(to.getPitch());
-            event.setTo(locked);
-            return;
-        }
-
-        // FIX: la protezione viene rimossa subito quando cambiano X/Y/Z.
-        manager().handleSpawnProtectionMovement(player, event.getFrom(), to);
-        manager().handleVoidLevel(player);
-
-        if (!manager().canLeaveArena(player, to)) {
-            Location locked = event.getFrom().clone();
-            locked.setYaw(to.getYaw());
-            locked.setPitch(to.getPitch());
-            event.setTo(locked);
+        if (this.manager().isAwaitingCreateAmount(player.getUniqueId())) {
+            event.setCancelled(true);
+            String message = event.getMessage().trim();
+            Bukkit.getScheduler().runTask(this.plugin, () -> this.manager().handleCreateAmountChat(player, message));
         }
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDamageByEntity(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Player victim)) return;
-        Player attacker = resolveAttacker(event.getDamager());
-        if (attacker == null) {
-            if (manager().isActiveParticipant(victim.getUniqueId())) event.setCancelled(true);
-            return;
-        }
-
-        boolean attackerParticipant = manager().isActiveParticipant(attacker.getUniqueId());
-        boolean victimParticipant = manager().isActiveParticipant(victim.getUniqueId());
-        if (!attackerParticipant && !victimParticipant) return;
-        if (!attackerParticipant || !victimParticipant || !manager().canDamage(attacker, victim)) {
-            event.setCancelled(true);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onFinalDamage(EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Player player)) return;
-        if (!manager().isActiveParticipant(player.getUniqueId())) return;
-        if (!manager().canTakeDamage(player)) {
-            event.setCancelled(true);
-            return;
-        }
-        if (manager().handlePotentialElimination(player, event.getFinalDamage())) {
-            event.setCancelled(true);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (!manager().isActiveParticipant(event.getPlayer().getUniqueId())) return;
-        if (!isAllowedBuildingMaterial(event.getBlockPlaced().getType())) {
+        boolean allowed = this.manager().handleBlockPlace(event.getPlayer(), event.getBlockPlaced(), event.getBlockReplacedState().getBlockData());
+        if (!allowed) {
             event.setCancelled(true);
-            event.getPlayer().sendMessage("§cIn questa modalità puoi piazzare soltanto i blocchi del kit.");
-            return;
         }
-        manager().handleBlockPlace(event.getPlayer(), event.getBlockPlaced());
+
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
     public void onBlockBreak(BlockBreakEvent event) {
-        if (!manager().isActiveParticipant(event.getPlayer().getUniqueId())) return;
-        BedfightManager.BreakResult result = manager().handleBlockBreak(event.getPlayer(), event.getBlock());
-        switch (result) {
-            case ALLOW -> { }
-            case ENEMY_BED -> event.setCancelled(true);
-            case OWN_BED -> {
-                event.setCancelled(true);
-                event.getPlayer().sendMessage("§cNon puoi distruggere il tuo letto.");
-            }
-            case DENY -> {
-                event.setCancelled(true);
-                event.getPlayer().sendMessage("§cNon puoi rompere questo blocco.");
-            }
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onExplosion(EntityExplodeEvent event) {
-        if (manager().isRoundWorld(event.getLocation().getWorld())) event.setCancelled(true);
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDrop(PlayerDropItemEvent event) {
-        if (manager().isActiveParticipant(event.getPlayer().getUniqueId())
-                && manager().isUndroppableKitItem(event.getItemDrop().getItemStack())) {
+        BedfightManager.BreakResult result = this.manager().handleBlockBreak(event.getPlayer(), event.getBlock());
+        if (result == BedfightManager.BreakResult.DENY) {
             event.setCancelled(true);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onFood(FoodLevelChangeEvent event) {
-        if (event.getEntity() instanceof Player player && manager().isActiveParticipant(player.getUniqueId())) {
-            event.setCancelled(true);
-            player.setFoodLevel(20);
-            player.setSaturation(20.0f);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
-    public void onDeath(PlayerDeathEvent event) {
-        Player player = event.getEntity();
-
-        // Legge il messaggio finale, dopo gli altri plugin, e impedisce il broadcast globale.
-        if (manager().isArenaWorld(player.getWorld())) {
-            String deathMessage = event.getDeathMessage();
-            event.setDeathMessage(null);
-            if (deathMessage != null && !deathMessage.isBlank()) {
-                for (Player recipient : player.getWorld().getPlayers()) {
-                    recipient.sendMessage(deathMessage);
-                }
+        } else if (result == BedfightManager.BreakResult.BED) {
+            event.setDropItems(false);
+            event.setExpToDrop(0);
+        } else {
+            if (result == BedfightManager.BreakResult.BREAKABLE_ARENA_BLOCK) {
+                Material brokenType = event.getBlock().getType();
+                event.setDropItems(false);
+                event.setExpToDrop(0);
+                event.getBlock().getWorld().dropItemNaturally(event.getBlock().getLocation().add((double)0.5F, (double)0.25F, (double)0.5F), new ItemStack(brokenType, 1));
             }
+
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onEntityExplode(EntityExplodeEvent event) {
+        if (this.manager().isRoundWorld(event.getLocation().getWorld())) {
+            event.blockList().clear();
         }
 
-        manager().handleDeath(player);
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onBlockExplode(BlockExplodeEvent event) {
+        if (this.manager().isRoundWorld(event.getBlock().getWorld())) {
+            event.blockList().clear();
+        }
+
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onMove(PlayerMoveEvent event) {
+        this.manager().handleVoidLevel(event.getPlayer(), event.getTo());
+        if (!this.manager().canMoveDuringCountdown(event.getPlayer(), event.getFrom(), event.getTo())) {
+            Location from = event.getFrom();
+            Location to = event.getTo();
+            if (to != null) {
+                from.setYaw(to.getYaw());
+                from.setPitch(to.getPitch());
+            }
+
+            event.setTo(from);
+        }
+
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onTeleport(PlayerTeleportEvent event) {
+        if (!this.manager().canLeaveArena(event.getPlayer(), event.getTo())) {
+            event.setCancelled(true);
+            event.getPlayer().sendMessage("§cNon puoi lasciare l'arena durante il BedWars.");
+        }
+
     }
 
     @EventHandler
+    public void onChangedWorld(PlayerChangedWorldEvent event) {
+        this.manager().handleChangedWorld(event.getPlayer());
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST
+    )
+    public void onDeath(PlayerDeathEvent event) {
+        Player player = event.getEntity();
+        if (player.getWorld().getName().equalsIgnoreCase("bedfight")) {
+            event.setDeathMessage(this.buildBedfightDeathMessage(player));
+        }
+
+        if (this.manager().isActiveParticipant(player.getUniqueId())) {
+            event.getDrops().clear();
+            event.setDroppedExp(0);
+            event.setKeepInventory(false);
+            event.setKeepLevel(false);
+            this.manager().handleDeath(player);
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST
+    )
     public void onRespawn(PlayerRespawnEvent event) {
-        Location location = manager().getRespawnLocation(event.getPlayer().getUniqueId());
-        if (location != null) event.setRespawnLocation(location);
-        manager().handleRespawn(event.getPlayer());
+        Location location = this.manager().getRespawnLocation(event.getPlayer().getUniqueId());
+        if (location != null) {
+            event.setRespawnLocation(location);
+        }
+
+        this.manager().handleRespawn(event.getPlayer());
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onDrop(PlayerDropItemEvent event) {
+        Player player = event.getPlayer();
+        if (this.manager().isActiveParticipant(player.getUniqueId())) {
+            if (this.manager().isUndroppableKitItem(event.getItemDrop().getItemStack())) {
+                event.setCancelled(true);
+            }
+
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.MONITOR
+    )
+    public void onJoin(PlayerJoinEvent event) {
+        this.manager().handleJoin(event.getPlayer());
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onFood(FoodLevelChangeEvent event) {
+        HumanEntity var3 = event.getEntity();
+        if (var3 instanceof Player player) {
+            if (this.manager().isActiveParticipant(player.getUniqueId())) {
+                event.setCancelled(true);
+                player.setFoodLevel(20);
+                player.setSaturation(0.0F);
+            }
+        }
+
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onDamage(EntityDamageEvent event) {
+        Entity var3 = event.getEntity();
+        if (var3 instanceof Player player) {
+            if (!this.manager().canTakeDamage(player)) {
+                event.setCancelled(true);
+            } else {
+                if (this.manager().handlePotentialElimination(player, event.getFinalDamage(), event.getCause())) {
+                    event.setCancelled(true);
+                }
+
+            }
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.LOWEST,
+            ignoreCancelled = true
+    )
+    public void onRecordDamager(EntityDamageByEntityEvent event) {
+        Entity var3 = event.getEntity();
+        if (var3 instanceof Player victim) {
+            Player attacker = this.resolvePlayer(event.getDamager());
+            this.manager().recordLastDamager(victim, attacker);
+        }
+
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onDamageByEntity(EntityDamageByEntityEvent event) {
+        Entity var4 = event.getEntity();
+        Player var10000;
+        if (var4 instanceof Player player) {
+            var10000 = player;
+        } else {
+            var10000 = null;
+        }
+
+        Player victim = var10000;
+        Player attacker = this.resolvePlayer(event.getDamager());
+        if ((victim != null || attacker != null) && !this.manager().canDamage(attacker, victim)) {
+            event.setCancelled(true);
+        }
+
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onBlockedCoinflipCommand(PlayerCommandPreprocessEvent event) {
+        Player player = event.getPlayer();
+        if (this.manager().isActiveParticipant(player.getUniqueId())) {
+            String message = event.getMessage().trim().toLowerCase(Locale.ROOT);
+            boolean conflicts = message.startsWith("/pillars") || message.startsWith("/cf classici") || message.startsWith("/coinflip classici") || message.startsWith("/cf pillars") || message.startsWith("/coinflip pillars");
+            if (conflicts) {
+                event.setCancelled(true);
+                player.sendMessage("§cNon puoi avviare altri coinflip durante un BedWars.");
+            }
+
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onCoinflipInventoryClick(InventoryClickEvent event) {
+        HumanEntity var3 = event.getWhoClicked();
+        if (var3 instanceof Player player) {
+            if (this.manager().isActiveParticipant(player.getUniqueId())) {
+                String title = ChatColor.stripColor(event.getView().getTitle());
+                if (title == null) {
+                    return;
+                }
+
+                String normalized = title.toLowerCase(Locale.ROOT);
+                if (normalized.contains("coinflip") || normalized.equals("scegli un kit")) {
+                    event.setCancelled(true);
+                    player.closeInventory();
+                }
+
+                return;
+            }
+        }
+
     }
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        manager().handleQuit(event.getPlayer());
+        this.manager().handleQuit(event.getPlayer());
     }
 
     @EventHandler
-    public void onJoin(PlayerJoinEvent event) {
-        manager().handleJoin(event.getPlayer());
+    public void onKick(PlayerKickEvent event) {
+        this.manager().handleQuit(event.getPlayer());
     }
 
-    @EventHandler
-    public void onWorldChange(PlayerChangedWorldEvent event) {
-        manager().handleChangedWorld(event.getPlayer());
-    }
+    private String buildBedfightDeathMessage(Player player) {
+        Player killer = player.getKiller();
+        if (killer != null) {
+            String var4 = player.getName();
+            return "§c☠ §f" + var4 + " §7è stato eliminato da §f" + killer.getName() + "§7.";
+        } else {
+            EntityDamageEvent lastDamage = player.getLastDamageCause();
+            if (lastDamage == null) {
+                return "§c☠ §f" + player.getName() + " §7è stato eliminato.";
+            } else {
+                String var10000;
+                switch (lastDamage.getCause()) {
+                    case VOID:
+                        var10000 = "§c☠ §f" + player.getName() + " §7è caduto nel vuoto.";
+                        break;
+                    case FALL:
+                        var10000 = "§c☠ §f" + player.getName() + " §7si è schiantato.";
+                        break;
+                    case FIRE:
+                    case FIRE_TICK:
+                    case LAVA:
+                    case HOT_FLOOR:
+                        var10000 = "§c☠ §f" + player.getName() + " §7è finito arrosto.";
+                        break;
+                    case PROJECTILE:
+                        var10000 = "§c☠ §f" + player.getName() + " §7è stato colpito a distanza.";
+                        break;
+                    case ENTITY_EXPLOSION:
+                    case BLOCK_EXPLOSION:
+                        var10000 = "§c☠ §f" + player.getName() + " §7è esploso.";
+                        break;
+                    case DROWNING:
+                        var10000 = "§c☠ §f" + player.getName() + " §7non sapeva nuotare.";
+                        break;
+                    case SUFFOCATION:
+                        var10000 = "§c☠ §f" + player.getName() + " §7è rimasto incastrato nei blocchi.";
+                        break;
+                    default:
+                        var10000 = "§c☠ §f" + player.getName() + " §7è stato eliminato.";
+                }
 
-    private Player resolveAttacker(Entity entity) {
-        if (entity instanceof Player player) return player;
-        if (entity instanceof org.bukkit.entity.Projectile projectile) {
-            ProjectileSource shooter = projectile.getShooter();
-            if (shooter instanceof Player player) return player;
+                return var10000;
+            }
         }
-        return null;
     }
 
-    private boolean isAllowedBuildingMaterial(Material material) {
-        String name = material.name();
-        return material == Material.END_STONE || name.endsWith("_WOOL") || name.endsWith("_PLANKS")
-                || name.endsWith("_LOG") || name.endsWith("_WOOD");
+    private Player resolvePlayer(Entity damager) {
+        if (damager instanceof Player player) {
+            return player;
+        } else {
+            if (damager instanceof Projectile projectile) {
+                ProjectileSource shooter = projectile.getShooter();
+                if (shooter instanceof Player player) {
+                    return player;
+                }
+            }
+
+            return null;
+        }
     }
 }
