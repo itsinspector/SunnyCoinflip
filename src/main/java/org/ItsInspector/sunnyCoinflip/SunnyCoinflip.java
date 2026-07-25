@@ -5,7 +5,7 @@ import net.milkbowl.vault.economy.Economy;
 import org.ItsInspector.sunnyCoinflip.commands.CoinflipCommand;
 import org.ItsInspector.sunnyCoinflip.commands.PillarSetupCommands;
 import org.ItsInspector.sunnyCoinflip.commands.PillarsCommand;
-import org.ItsInspector.sunnyCoinflip.integrations.BedwarsExpansion;
+import org.ItsInspector.sunnyCoinflip.integrations.BedfightExpansion;
 import org.ItsInspector.sunnyCoinflip.integrations.PillarExpansion;
 import org.ItsInspector.sunnyCoinflip.listeners.BedfightListener;
 import org.ItsInspector.sunnyCoinflip.listeners.ChatListener;
@@ -15,8 +15,11 @@ import org.ItsInspector.sunnyCoinflip.listeners.PillarItemSafetyListener;
 import org.ItsInspector.sunnyCoinflip.listeners.PillarListener;
 import org.ItsInspector.sunnyCoinflip.managers.BedfightManager;
 import org.ItsInspector.sunnyCoinflip.managers.GameManager;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.Map;
 
 public final class SunnyCoinflip extends JavaPlugin {
     private static Economy econ;
@@ -35,6 +38,7 @@ public final class SunnyCoinflip extends JavaPlugin {
             this.getServer().getPluginManager().disablePlugin(this);
         } else {
             this.saveDefaultConfig();
+            this.migrateLegacyBedfightConfig();
             this.gameManager = new GameManager();
             this.bedfightManager = new BedfightManager(this);
             this.chatListener = new ChatListener(this);
@@ -53,7 +57,7 @@ public final class SunnyCoinflip extends JavaPlugin {
             this.getServer().getPluginManager().registerEvents(new CommandBlockListener(), this);
             if (this.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
                 (new PillarExpansion(this)).register();
-                (new BedwarsExpansion(this)).register();
+                (new BedfightExpansion(this)).register();
             }
 
         }
@@ -110,5 +114,21 @@ public final class SunnyCoinflip extends JavaPlugin {
 
     public static SunnyCoinflip getInstance() {
         return instance;
+    }
+
+    private void migrateLegacyBedfightConfig() {
+        String legacyKey = "bed" + "wars";
+        ConfigurationSection legacy = this.getConfig().getConfigurationSection(legacyKey);
+        if (legacy == null) return;
+
+        for (Map.Entry<String, Object> entry : legacy.getValues(true).entrySet()) {
+            if (entry.getValue() instanceof ConfigurationSection) continue;
+            String targetPath = "bedfight." + entry.getKey();
+            if (!this.getConfig().isSet(targetPath)) {
+                this.getConfig().set(targetPath, entry.getValue());
+            }
+        }
+        this.getConfig().set(legacyKey, null);
+        this.saveConfig();
     }
 }

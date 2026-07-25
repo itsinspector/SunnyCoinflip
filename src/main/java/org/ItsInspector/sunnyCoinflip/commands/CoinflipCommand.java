@@ -12,7 +12,7 @@ import org.bukkit.entity.Player;
 public class CoinflipCommand implements CommandExecutor {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         SunnyCoinflip plugin = SunnyCoinflip.getInstance();
-        if (args.length <= 0 || !args[0].equalsIgnoreCase("bedwars") && !args[0].equalsIgnoreCase("bedfight")) {
+        if (args.length <= 0 || !this.isBedfightAlias(args[0])) {
             if (!(sender instanceof Player)) {
                 sender.sendMessage("Solo i giocatori possono usare questo comando.");
                 return true;
@@ -61,16 +61,16 @@ public class CoinflipCommand implements CommandExecutor {
                         }
                     }
 
-                    player.sendMessage("§cUtilizzo: /cf classici, /cf pillars, /cf bedwars o /cf info");
+                    player.sendMessage("§cUtilizzo: /cf classici, /cf pillars, /cf bedfight o /cf info");
                     return true;
                 }
             }
         } else {
-            return this.handleBedwars(sender, args, plugin);
+            return this.handleBedfight(sender, args, plugin);
         }
     }
 
-    private boolean handleBedwars(CommandSender sender, String[] args, SunnyCoinflip plugin) {
+    private boolean handleBedfight(CommandSender sender, String[] args, SunnyCoinflip plugin) {
         if (args.length >= 2 && args[1].equalsIgnoreCase("status")) {
             plugin.getBedfightManager().showStatus(sender);
             return true;
@@ -99,11 +99,11 @@ public class CoinflipCommand implements CommandExecutor {
                 return true;
             } else if (args[1].equalsIgnoreCase("list")) {
                 plugin.getBedfightManager().listChallenges(player);
-                this.sendBedwarsUsage(player);
+                this.sendBedfightUsage(player);
                 return true;
             } else if (args[1].equalsIgnoreCase("create")) {
                 if (args.length < 3) {
-                    player.sendMessage("§cUtilizzo: /cf bedwars create <somma>");
+                    player.sendMessage("§cUtilizzo: /cf bedfight create <somma>");
                     return true;
                 } else {
                     try {
@@ -117,7 +117,7 @@ public class CoinflipCommand implements CommandExecutor {
                 }
             } else if (args[1].equalsIgnoreCase("accept")) {
                 if (args.length < 3) {
-                    player.sendMessage("§cUtilizzo: /cf bedwars accept <creatore>");
+                    player.sendMessage("§cUtilizzo: /cf bedfight accept <creatore>");
                     return true;
                 } else {
                     plugin.getBedfightManager().acceptChallenge(player, args[2]);
@@ -130,7 +130,7 @@ public class CoinflipCommand implements CommandExecutor {
                 plugin.getBedfightManager().acceptChallenge(player, args[1]);
                 return true;
             } else if (args.length < 4) {
-                player.sendMessage("§cUtilizzo: /cf bedwars bet <giocatore|first|opponent> <somma>");
+                player.sendMessage("§cUtilizzo: /cf bedfight bet <giocatore|first|opponent> <somma>");
                 return true;
             } else {
                 try {
@@ -143,7 +143,7 @@ public class CoinflipCommand implements CommandExecutor {
                 return true;
             }
         } else {
-            sender.sendMessage("§cUso console: /cf bedwars status oppure /cf bedwars abort");
+            sender.sendMessage("§cUso console: /cf bedfight status oppure /cf bedfight abort");
             return true;
         }
     }
@@ -174,10 +174,16 @@ public class CoinflipCommand implements CommandExecutor {
         return !(sender instanceof Player) || sender.hasPermission("sunnycoinflip.admin");
     }
 
-    private void sendBedwarsUsage(Player player) {
-        player.sendMessage("§7Comandi BedWars: §e/cf bedwars create <somma>§7, §e/cf bedwars accept <creatore>§7, §e/cf bedwars cancel§7, §e/cf bedwars status§7, §e/cf bedwars bet <giocatore> <somma>§7.");
+    private boolean isBedfightAlias(String value) {
+        return value.equalsIgnoreCase("bedfight")
+                || value.equalsIgnoreCase("bw")
+                || value.equalsIgnoreCase("bf");
+    }
+
+    private void sendBedfightUsage(Player player) {
+        player.sendMessage("§7Comandi BedFight: §e/cf bedfight create <somma>§7, §e/cf bedfight accept <creatore>§7, §e/cf bedfight cancel§7, §e/cf bedfight status§7, §e/cf bedfight bet <giocatore> <somma>§7.");
         if (player.hasPermission("sunnycoinflip.admin")) {
-            player.sendMessage("§7Setup: §e/cf bedwars setfirstpos§7, §esetopponentpos§7, §esetfirstbed§7, §esetopponentbed§7, §eabort§7.");
+            player.sendMessage("§7Setup: §e/cf bedfight setfirstpos§7, §esetopponentpos§7, §esetfirstbed§7, §esetopponentbed§7, §eabort§7.");
         }
 
     }

@@ -22,6 +22,7 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerItemDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
@@ -184,6 +185,17 @@ public final class BedfightListener implements Listener {
     }
 
     @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onKitDamage(PlayerItemDamageEvent event) {
+        if (this.manager().isActiveParticipant(event.getPlayer().getUniqueId())
+                && this.manager().isUndroppableKitItem(event.getItem())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(
             priority = EventPriority.MONITOR
     )
     public void onJoin(PlayerJoinEvent event) {
@@ -259,7 +271,7 @@ public final class BedfightListener implements Listener {
             boolean conflicts = message.startsWith("/pillars") || message.startsWith("/cf classici") || message.startsWith("/coinflip classici") || message.startsWith("/cf pillars") || message.startsWith("/coinflip pillars");
             if (conflicts) {
                 event.setCancelled(true);
-                player.sendMessage("§8[§bBedFight§8] §r§cNon puoi avviare altre modalità durante una partita BedFight.");
+                player.sendMessage("§cNon puoi avviare altre modalità durante una partita BedFight.");
             }
 
         }

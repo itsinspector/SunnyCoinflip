@@ -9,7 +9,7 @@ commands:
   coinflip:
     description: Comando principale per il coinflip
     aliases: [cf]
-    usage: /cf <classici|pillars|bedwars|info>
+    usage: /cf <classici|pillars|bedfight|bw|bf|info>
   setpillarsfirst:
     description: Imposta la posizione del primo pillar
     permission: sunnycoinflip.admin

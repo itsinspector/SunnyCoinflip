@@ -7,15 +7,15 @@ import org.ItsInspector.sunnyCoinflip.managers.BedfightManager;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 
-public final class BedwarsExpansion extends PlaceholderExpansion {
+public final class BedfightExpansion extends PlaceholderExpansion {
     private final SunnyCoinflip plugin;
 
-    public BedwarsExpansion(SunnyCoinflip plugin) {
+    public BedfightExpansion(SunnyCoinflip plugin) {
         this.plugin = plugin;
     }
 
     public String getIdentifier() {
-        return "bedwars";
+        return "bedfight";
     }
 
     public String getAuthor() {
@@ -39,7 +39,7 @@ public final class BedwarsExpansion extends PlaceholderExpansion {
             switch (params.toLowerCase(Locale.ROOT)) {
                 case "available":
                 case "disponibile":
-                    var10000 = this.colored(manager.isAvailable() ? this.configText("bedwars.placeholders.available", "&aDisponibile") : this.configText("bedwars.placeholders.unavailable", "&cNon disponibile"));
+                    var10000 = this.colored(manager.isAvailable() ? this.configText("bedfight.placeholders.available", "&aDisponibile") : this.configText("bedfight.placeholders.unavailable", "&cNon disponibile"));
                     break;
                 case "status":
                 case "state":
@@ -69,11 +69,11 @@ public final class BedwarsExpansion extends PlaceholderExpansion {
 
     private String detailedStatus(BedfightManager manager) {
         if (!manager.isEnabled()) {
-            return this.colored(this.configText("bedwars.placeholders.disabled", "&cDisabilitato"));
+            return this.colored(this.configText("bedfight.placeholders.disabled", "&cDisabilitato"));
         } else if (!manager.isArenaConfigured()) {
-            return this.colored(this.configText("bedwars.placeholders.not-configured", "&eNon configurato"));
+            return this.colored(this.configText("bedfight.placeholders.not-configured", "&eNon configurato"));
         } else {
-            return !manager.isAvailable() ? this.colored(this.configText("bedwars.placeholders.busy", "&cOccupato")) : this.colored(this.configText("bedwars.placeholders.available", "&aDisponibile"));
+            return !manager.isAvailable() ? this.colored(this.configText("bedfight.placeholders.busy", "&cOccupato")) : this.colored(this.configText("bedfight.placeholders.available", "&aDisponibile"));
         }
     }
 

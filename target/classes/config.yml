@@ -15,8 +15,8 @@ pillars:
   # Intervallo in ticks (20 ticks = 1 secondo) per il drop degli oggetti
   item-drop-interval: 60
 
-# Coinflip BedWars interno: non richiede altri plugin.
-bedwars:
+# Coinflip BedFight interno: non richiede altri plugin.
+bedfight:
   enabled: true
 
   # Conto alla rovescia prima di sbloccare movimento e PvP.
@@ -26,9 +26,6 @@ bedwars:
   # diventa spectator senza morire realmente e rientra dopo 3 secondi se il letto è intatto.
   void-y: 64
   respawn-delay-ticks: 60
-
-  # Invulnerabilità dopo l'inizio e dopo ogni rientro. 40 tick = 2 secondi.
-  spawn-protection-ticks: 40
 
   # Deathmatch I: dopo 5 minuti entrambi i letti vengono distrutti.
   beds-auto-destroy-seconds: 300
@@ -60,10 +57,10 @@ bedwars:
     not-configured: "&eNon configurato"
 
   # Salvati automaticamente con:
-  # /cf bedwars setfirstpos
-  # /cf bedwars setopponentpos
-  # /cf bedwars setfirstbed
-  # /cf bedwars setopponentbed
+  # /cf bedfight setfirstpos
+  # /cf bedfight setopponentpos
+  # /cf bedfight setfirstbed
+  # /cf bedfight setopponentbed
   # first-position:
   # opponent-position:
   # first-bed:
