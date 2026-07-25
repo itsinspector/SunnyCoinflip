@@ -130,30 +130,15 @@ public class PillarListener implements Listener {
                             p2.setHealth(p2.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
                             p2.setFoodLevel(20);
                             (new BukkitRunnable() {
-                                // $FF: synthetic field
-                                final PillarMatch val$match;
-                                // $FF: synthetic field
-                                final Player val$p1;
-                                // $FF: synthetic field
-                                final Player val$p2;
-                                // $FF: synthetic field
-                                final <undefinedtype> this$1;
-
-                                {
-                                    this.val$match = var2;
-                                    this.val$p1 = var3;
-                                    this.val$p2 = var4;
-                                    this.this$1 = this$1;
-                                }
-
+                                @Override
                                 public void run() {
-                                    this.val$match.setPlaying(true);
-                                    this.val$p1.setHealth(this.val$p1.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-                                    this.val$p1.setFoodLevel(20);
-                                    this.val$p2.setHealth(this.val$p2.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-                                    this.val$p2.setFoodLevel(20);
-                                    this.this$1.this$0.startDropping(this.val$p1, this.val$p2, this.val$match);
-                                    this.this$1.this$0.startDeathmatchTimer(this.val$match);
+                                    match.setPlaying(true);
+                                    p1.setHealth(p1.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                                    p1.setFoodLevel(20);
+                                    p2.setHealth(p2.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+                                    p2.setFoodLevel(20);
+                                    PillarListener.this.startDropping(p1, p2, match);
+                                    PillarListener.this.startDeathmatchTimer(match);
                                 }
                             }).runTaskLater(PillarListener.this.plugin, 40L);
                         }

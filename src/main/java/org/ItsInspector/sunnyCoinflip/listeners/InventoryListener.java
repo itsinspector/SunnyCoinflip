@@ -263,8 +263,8 @@ public class InventoryListener implements Listener {
     }
 
     public void openNormalCoinflipMenu(Player player, int page) {
-        String[] var10002 = ItemBuilder.translate("ᴄᴏɪɴꜰʟɪᴘ ᴄʟᴀѕѕɪᴄɪ - ᴘᴀɢɪɴᴀ ");
-        Inventory inv = Bukkit.createInventory((InventoryHolder)null, 54, var10002 + (page + 1));
+        String title = ItemBuilder.translate("ᴄᴏɪɴꜰʟɪᴘ ᴄʟᴀѕѕɪᴄɪ - ᴘᴀɢɪɴᴀ ") + (page + 1);
+        Inventory inv = Bukkit.createInventory((InventoryHolder)null, 54, title);
         List<Coinflip> allCfs = new ArrayList(this.plugin.getGameManager().getAllCoinflips());
         int start = page * 45;
         int end = Math.min(start + 45, allCfs.size());
@@ -289,11 +289,11 @@ public class InventoryListener implements Listener {
         }
 
         Material var10000 = Material.PAPER;
-        var10002 = new String[2];
+        String[] infoLore = new String[2];
         Object[] var13 = new Object[]{SunnyCoinflip.getEconomy().getBalance(player)};
-        var10002[0] = "§7ʙɪʟᴀɴᴄɪᴏ: &f\ue0d8 §e" + String.format("%.2f", var13);
-        var10002[1] = "§7ᴄᴏɪɴꜰʟɪᴘ ᴀᴛᴛɪᴠɪ: §e" + allCfs.size();
-        ItemStack info = ItemBuilder.createItem(var10000, "§bʟᴇ ᴛᴜᴇ ɪɴꜰᴏ:", var10002);
+        infoLore[0] = "§7ʙɪʟᴀɴᴄɪᴏ: &f\ue0d8 §e" + String.format("%.2f", var13);
+        infoLore[1] = "§7ᴄᴏɪɴꜰʟɪᴘ ᴀᴛᴛɪᴠɪ: §e" + allCfs.size();
+        ItemStack info = ItemBuilder.createItem(var10000, "§bʟᴇ ᴛᴜᴇ ɪɴꜰᴏ:", infoLore);
         inv.setItem(45, info);
         inv.setItem(48, ItemBuilder.createItem(Material.ARROW, "§7ɪɴᴅɪᴇᴛʀᴏ"));
         inv.setItem(49, ItemBuilder.createItem(Material.NETHER_STAR, "§6&lᴄʀᴇᴀ ᴄᴏɪɴꜰʟɪᴘ"));

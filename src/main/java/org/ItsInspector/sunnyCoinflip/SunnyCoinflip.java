@@ -1,7 +1,6 @@
 package org.ItsInspector.sunnyCoinflip;
 
 import java.util.logging.Logger;
-import me.libs.serverlibs.ServiceSupport;
 import net.milkbowl.vault.economy.Economy;
 import org.ItsInspector.sunnyCoinflip.commands.CoinflipCommand;
 import org.ItsInspector.sunnyCoinflip.commands.PillarSetupCommands;
@@ -29,7 +28,6 @@ public final class SunnyCoinflip extends JavaPlugin {
     private PillarListener pillarListener;
 
     public void onEnable() {
-        ServiceSupport.inject((Object)this);
         long var10000 = 4442722799442181059L;
         instance = this;
         if (!this.setupEconomy()) {
