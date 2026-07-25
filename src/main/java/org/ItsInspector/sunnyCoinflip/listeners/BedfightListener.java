@@ -6,7 +6,6 @@ import org.ItsInspector.sunnyCoinflip.managers.BedfightManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
@@ -33,7 +32,6 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.projectiles.ProjectileSource;
 
 public final class BedfightListener implements Listener {
@@ -64,11 +62,13 @@ public final class BedfightListener implements Listener {
             ignoreCancelled = true
     )
     public void onBlockPlace(BlockPlaceEvent event) {
-        boolean allowed = this.manager().handleBlockPlace(event.getPlayer(), event.getBlockPlaced(), event.getBlockReplacedState().getBlockData());
+        boolean allowed = this.manager().handleBlockPlace(
+                event.getPlayer(),
+                event.getBlockPlaced(),
+                event.getBlockReplacedState().getBlockData());
         if (!allowed) {
             event.setCancelled(true);
         }
-
     }
 
     @EventHandler(
@@ -77,19 +77,12 @@ public final class BedfightListener implements Listener {
     )
     public void onBlockBreak(BlockBreakEvent event) {
         BedfightManager.BreakResult result = this.manager().handleBlockBreak(event.getPlayer(), event.getBlock());
-        if (result == BedfightManager.BreakResult.DENY) {
+        if (result == BedfightManager.BreakResult.DENY
+                || result == BedfightManager.BreakResult.OWN_BED) {
             event.setCancelled(true);
-        } else if (result == BedfightManager.BreakResult.BED) {
+        } else if (result == BedfightManager.BreakResult.ENEMY_BED) {
             event.setDropItems(false);
             event.setExpToDrop(0);
-        } else {
-            if (result == BedfightManager.BreakResult.BREAKABLE_ARENA_BLOCK) {
-                Material brokenType = event.getBlock().getType();
-                event.setDropItems(false);
-                event.setExpToDrop(0);
-                event.getBlock().getWorld().dropItemNaturally(event.getBlock().getLocation().add((double)0.5F, (double)0.25F, (double)0.5F), new ItemStack(brokenType, 1));
-            }
-
         }
     }
 
@@ -98,7 +91,7 @@ public final class BedfightListener implements Listener {
             ignoreCancelled = true
     )
     public void onEntityExplode(EntityExplodeEvent event) {
-        if (this.manager().isRoundWorld(event.getLocation().getWorld())) {
+        if (this.manager().isBlockProtectionActive(event.getLocation().getWorld())) {
             event.blockList().clear();
         }
 
@@ -109,7 +102,7 @@ public final class BedfightListener implements Listener {
             ignoreCancelled = true
     )
     public void onBlockExplode(BlockExplodeEvent event) {
-        if (this.manager().isRoundWorld(event.getBlock().getWorld())) {
+        if (this.manager().isBlockProtectionActive(event.getBlock().getWorld())) {
             event.blockList().clear();
         }
 
@@ -130,8 +123,10 @@ public final class BedfightListener implements Listener {
             }
 
             event.setTo(from);
+            return;
         }
 
+        this.manager().handleSpawnProtectionMovement(event.getPlayer(), event.getFrom(), event.getTo());
     }
 
     @EventHandler(
@@ -141,7 +136,7 @@ public final class BedfightListener implements Listener {
     public void onTeleport(PlayerTeleportEvent event) {
         if (!this.manager().canLeaveArena(event.getPlayer(), event.getTo())) {
             event.setCancelled(true);
-            event.getPlayer().sendMessage("§cNon puoi lasciare l'arena durante il BedWars.");
+            event.getPlayer().sendMessage("§8[§bBedFight§8] §r§cNon puoi lasciare l'arena mentre la partita è in corso.");
         }
 
     }
@@ -228,7 +223,7 @@ public final class BedfightListener implements Listener {
             if (!this.manager().canTakeDamage(player)) {
                 event.setCancelled(true);
             } else {
-                if (this.manager().handlePotentialElimination(player, event.getFinalDamage(), event.getCause())) {
+                if (this.manager().handlePotentialElimination(player, event.getFinalDamage())) {
                     event.setCancelled(true);
                 }
 
@@ -281,7 +276,7 @@ public final class BedfightListener implements Listener {
             boolean conflicts = message.startsWith("/pillars") || message.startsWith("/cf classici") || message.startsWith("/coinflip classici") || message.startsWith("/cf pillars") || message.startsWith("/coinflip pillars");
             if (conflicts) {
                 event.setCancelled(true);
-                player.sendMessage("§cNon puoi avviare altri coinflip durante un BedWars.");
+                player.sendMessage("§8[§bBedFight§8] §r§cNon puoi avviare altre modalità durante una partita BedFight.");
             }
 
         }

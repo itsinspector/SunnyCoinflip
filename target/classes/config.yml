@@ -22,24 +22,25 @@ bedwars:
   # Conto alla rovescia prima di sbloccare movimento e PvP.
   countdown: 5
 
-  # A Y=43 o con mezzo cuore il giocatore diventa spectator e rientra dopo 3 secondi.
-  void-y: 43
+  # A Y=64 o con mezzo cuore il giocatore entra nella sequenza di eliminazione,
+  # diventa spectator senza morire realmente e rientra dopo 3 secondi se il letto è intatto.
+  void-y: 64
   respawn-delay-ticks: 60
 
   # Invulnerabilità dopo l'inizio e dopo ogni rientro. 60 tick = 3 secondi.
   spawn-protection-ticks: 60
 
-  # Dopo 5 minuti entrambi i letti spariscono e non sono più disponibili respawn.
+  # Deathmatch I: dopo 5 minuti entrambi i letti vengono distrutti.
   beds-auto-destroy-seconds: 300
 
-  # Dopo 7 minuti parte il deathmatch. Il danno è espresso in punti vita
-  # (2 punti vita = 1 cuore) e aumenta ogni secondo.
-  deathmatch-start-seconds: 420
+  # Deathmatch II: 3 minuti dopo la distruzione dei letti inizia il danno globale.
+  # Il danno è espresso in punti vita (2 punti vita = 1 cuore) e aumenta ogni secondo.
+  deathmatch-damage-delay-seconds: 180
   deathmatch-starting-damage: 1.0
   deathmatch-damage-increase: 1.0
 
-  # Y=100 è consentito; da Y=101 in poi il piazzamento viene bloccato.
-  max-build-height: 100
+  # Y=90 è consentito; da Y=91 in poi il piazzamento viene bloccato.
+  max-build-height: 90
 
   # Se i letti non sono configurati manualmente, vengono cercati vicino agli spawn.
   bed-search-radius: 12

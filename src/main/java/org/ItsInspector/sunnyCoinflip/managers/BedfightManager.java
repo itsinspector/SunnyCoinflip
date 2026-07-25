@@ -5,6 +5,7 @@ import org.ItsInspector.sunnyCoinflip.SunnyCoinflip;
 import org.ItsInspector.sunnyCoinflip.models.BedfightCoinflip;
 import org.ItsInspector.sunnyCoinflip.utils.NumberParser;
 import org.bukkit.Bukkit;
+import org.bukkit.Color;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -17,8 +18,11 @@ import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.type.Bed;
 import org.bukkit.command.CommandSender;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
@@ -36,13 +40,15 @@ import java.util.UUID;
 /**
  * Gestisce la modalità BedWars/Bedfight del coinflip.
  *
- * Le tre correzioni richieste sono contrassegnate con "FIX" nel sorgente:
- * - spettatore persistente anche senza OP;
- * - rimozione immediata della spawn protection al movimento reale;
- * - vita piena subito dopo l'ingresso in queue/partita.
+ * Include gestione squadre e kit, protezione dell'arena, eliminazioni senza morte
+ * reale, respawn persistente in spectator e deathmatch progressivo in due fasi.
  */
 public final class BedfightManager {
     public enum BreakResult { ALLOW, DENY, OWN_BED, ENEMY_BED }
+
+    private static final String PREFIX = "§8[§bBedFight§8] §r";
+    private static final String BEDFIGHT_WORLD = "bedfight";
+    private static final double HALF_HEART = 1.0;
 
     private final SunnyCoinflip plugin;
     private final Map<UUID, BedfightCoinflip> waitingByCreator = new LinkedHashMap<>();
@@ -106,9 +112,13 @@ public final class BedfightManager {
                 && round.world.getUID().equals(world.getUID());
     }
 
+    public boolean isBlockProtectionActive(World world) {
+        return isProtectedBedfightRound(activeRound, world);
+    }
+
     public void handleSimpleCommand(Player player) {
         if (!isEnabled()) {
-            player.sendMessage("§cLa modalità BedWars è disabilitata.");
+            player.sendMessage(PREFIX + "§cLa modalità BedFight è attualmente disabilitata.");
             return;
         }
         if (activeRound != null && activeRound.playing && !isActiveParticipant(player.getUniqueId())) {
@@ -116,7 +126,7 @@ public final class BedfightManager {
             return;
         }
         if (waitingByCreator.containsKey(player.getUniqueId())) {
-            player.sendMessage("§eSei già in queue. Usa §f/cf bedwars cancel §eper uscire.");
+            player.sendMessage(PREFIX + "§eHai già una sfida in attesa. §7Usa §f/cf bedwars cancel §7per annullarla.");
             return;
         }
         if (!waitingByCreator.isEmpty()) {
@@ -124,7 +134,7 @@ public final class BedfightManager {
             return;
         }
         awaitingCreateAmount.add(player.getUniqueId());
-        player.sendMessage("§eScrivi in chat la somma del BedWars coinflip, oppure §fcancel§e.");
+        player.sendMessage(PREFIX + "§eInserisci in chat l'importo della sfida oppure scrivi §fcancel§e.");
     }
 
     public boolean isAwaitingCreateAmount(UUID playerId) {
@@ -134,39 +144,40 @@ public final class BedfightManager {
     public void handleCreateAmountChat(Player player, String message) {
         if (!awaitingCreateAmount.remove(player.getUniqueId())) return;
         if (message.equalsIgnoreCase("cancel") || message.equalsIgnoreCase("annulla")) {
-            player.sendMessage("§eCreazione annullata.");
+            player.sendMessage(PREFIX + "§eCreazione della sfida annullata.");
             return;
         }
         try {
             createChallenge(player, NumberParser.parseNumber(message));
         } catch (IllegalArgumentException exception) {
-            player.sendMessage("§c" + exception.getMessage());
+            player.sendMessage(PREFIX + "§c" + exception.getMessage());
         }
     }
 
     public void createChallenge(Player creator, double amount) {
         if (!isEnabled()) {
-            creator.sendMessage("§cLa modalità BedWars è disabilitata.");
+            creator.sendMessage(PREFIX + "§cLa modalità BedFight è attualmente disabilitata.");
             return;
         }
         if (!isArenaConfigured()) {
-            creator.sendMessage("§cArena BedWars non configurata completamente.");
+            creator.sendMessage(PREFIX + "§cLa configurazione dell'arena BedFight non è completa.");
             return;
         }
         if (activeRound != null || !waitingByCreator.isEmpty()) {
-            creator.sendMessage("§cL'arena BedWars è già occupata.");
+            creator.sendMessage(PREFIX + "§cL'arena è attualmente occupata da un'altra partita.");
             return;
         }
         if (isParticipant(creator.getUniqueId())) {
-            creator.sendMessage("§cSei già dentro una queue o partita.");
+            creator.sendMessage(PREFIX + "§cSei già coinvolto in una sfida o in una partita.");
             return;
         }
         if (amount <= 0 || amount > plugin.getGameManager().getMaxAmount()) {
-            creator.sendMessage("§cImporto non valido. Massimo: §f" + money(plugin.getGameManager().getMaxAmount()));
+            creator.sendMessage(PREFIX + "§cImporto non valido. §7Importo massimo: §f"
+                    + money(plugin.getGameManager().getMaxAmount()) + "§7.");
             return;
         }
         if (!economy().has(creator, amount)) {
-            creator.sendMessage("§cNon hai abbastanza denaro.");
+            creator.sendMessage(PREFIX + "§cSaldo insufficiente per creare questa sfida.");
             return;
         }
 
@@ -176,8 +187,8 @@ public final class BedfightManager {
         waitingByCreator.put(creator.getUniqueId(), match);
 
         prepareQueuePlayer(creator, getFirstPosition());
-        creator.sendMessage("§aBedWars coinflip creato per §f" + money(amount) + "§a.");
-        creator.sendMessage("§7In attesa di un opponent. Usa §f/cf bedwars cancel §7per annullare.");
+        creator.sendMessage(PREFIX + "§aSfida creata con successo per §f" + money(amount) + "§a.");
+        creator.sendMessage(PREFIX + "§7In attesa di un avversario. Usa §f/cf bedwars cancel §7per annullare.");
 
         long expireTicks = Math.max(20L, plugin.getConfig().getLong("bedwars.challenge-expire-seconds", 300L) * 20L);
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -187,7 +198,7 @@ public final class BedfightManager {
             Player online = Bukkit.getPlayer(creator.getUniqueId());
             if (online != null) {
                 restoreWaitingPlayer(online);
-                online.sendMessage("§eLa queue BedWars è scaduta.");
+                online.sendMessage(PREFIX + "§eLa sfida è scaduta perché non è stata accettata in tempo.");
             } else {
                 waitingSnapshots.remove(creator.getUniqueId());
             }
@@ -196,10 +207,10 @@ public final class BedfightManager {
 
     public void listChallenges(Player player) {
         if (waitingByCreator.isEmpty()) {
-            player.sendMessage("§eNon ci sono BedWars coinflip disponibili.");
+            player.sendMessage(PREFIX + "§eNon sono presenti sfide BedFight disponibili.");
             return;
         }
-        player.sendMessage("§6§lBED FIGHT COINFLIP DISPONIBILI");
+        player.sendMessage("§8§m────────§r §b§lSFIDE BEDFIGHT DISPONIBILI §8§m────────");
         for (BedfightCoinflip match : waitingByCreator.values()) {
             player.sendMessage("§e- §f" + match.getCreatorName() + " §7• §a" + money(match.getAmount())
                     + " §7• §f/cf bedwars accept " + match.getCreatorName());
@@ -208,20 +219,20 @@ public final class BedfightManager {
 
     public void acceptChallenge(Player opponent, String creatorName) {
         if (activeRound != null) {
-            opponent.sendMessage("§cL'arena è già occupata.");
+            opponent.sendMessage(PREFIX + "§cL'arena è attualmente occupata.");
             return;
         }
         BedfightCoinflip match = findWaitingByName(creatorName);
         if (match == null) {
-            opponent.sendMessage("§cQueue non trovata per §f" + creatorName + "§c.");
+            opponent.sendMessage(PREFIX + "§cNessuna sfida disponibile creata da §f" + creatorName + "§c.");
             return;
         }
         if (match.getCreator().equals(opponent.getUniqueId())) {
-            opponent.sendMessage("§cNon puoi accettare la tua stessa queue.");
+            opponent.sendMessage(PREFIX + "§cNon puoi accettare una sfida creata da te.");
             return;
         }
         if (isParticipant(opponent.getUniqueId())) {
-            opponent.sendMessage("§cSei già dentro una queue o partita.");
+            opponent.sendMessage(PREFIX + "§cSei già coinvolto in una sfida o in una partita.");
             return;
         }
 
@@ -229,12 +240,12 @@ public final class BedfightManager {
         if (creator == null || !creator.isOnline()) {
             waitingByCreator.remove(match.getCreator());
             waitingSnapshots.remove(match.getCreator());
-            opponent.sendMessage("§cIl creator non è più online.");
+            opponent.sendMessage(PREFIX + "§cIl creatore della sfida non è più online.");
             return;
         }
         if (!economy().has(creator, match.getAmount()) || !economy().has(opponent, match.getAmount())) {
-            opponent.sendMessage("§cUno dei due giocatori non ha più abbastanza denaro.");
-            creator.sendMessage("§cImpossibile avviare: saldo insufficiente di uno dei partecipanti.");
+            opponent.sendMessage(PREFIX + "§cLa partita non può iniziare: saldo insufficiente.");
+            creator.sendMessage(PREFIX + "§cLa partita non può iniziare: uno dei partecipanti non dispone del saldo richiesto.");
             return;
         }
 
@@ -252,8 +263,10 @@ public final class BedfightManager {
 
         prepareFighter(creator, getFirstPosition());
         prepareFighter(opponent, getOpponentPosition());
-        creator.sendMessage("§aOpponent trovato: §f" + opponent.getName());
-        opponent.sendMessage("§aHai accettato il coinflip di §f" + creator.getName());
+        creator.sendMessage(PREFIX + "§aAvversario trovato: §f" + opponent.getName() + "§a.");
+        opponent.sendMessage(PREFIX + "§aHai accettato la sfida di §f" + creator.getName() + "§a.");
+        playSound(creator, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f);
+        playSound(opponent, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f);
         startCountdown(round);
     }
 
@@ -261,46 +274,47 @@ public final class BedfightManager {
         BedfightCoinflip removed = waitingByCreator.remove(player.getUniqueId());
         awaitingCreateAmount.remove(player.getUniqueId());
         if (removed == null) {
-            player.sendMessage("§eNon hai una queue BedWars attiva.");
+            player.sendMessage(PREFIX + "§eNon hai alcuna sfida BedFight in attesa.");
             return;
         }
         restoreWaitingPlayer(player);
-        player.sendMessage("§eQueue BedWars annullata.");
+        player.sendMessage(PREFIX + "§eSfida BedFight annullata correttamente.");
     }
 
     public void placeBet(Player bettor, String targetName, double amount) {
         ActiveRound round = activeRound;
         if (round == null || round.playing || round.finishing) {
-            bettor.sendMessage("§cLe scommesse sono disponibili soltanto durante il countdown.");
+            bettor.sendMessage(PREFIX + "§cLe scommesse sono disponibili esclusivamente durante il conto alla rovescia.");
             return;
         }
         Player target = Bukkit.getPlayerExact(targetName);
         if (target == null || !round.match.includes(target.getUniqueId())) {
-            bettor.sendMessage("§cQuel giocatore non partecipa al round.");
+            bettor.sendMessage(PREFIX + "§cIl giocatore indicato non partecipa a questa partita.");
             return;
         }
         if (round.match.includes(bettor.getUniqueId())) {
-            bettor.sendMessage("§cI partecipanti non possono scommettere sul proprio round.");
+            bettor.sendMessage(PREFIX + "§cI partecipanti non possono scommettere sulla propria partita.");
             return;
         }
         if (amount <= 0 || !economy().has(bettor, amount)) {
-            bettor.sendMessage("§cImporto non valido o saldo insufficiente.");
+            bettor.sendMessage(PREFIX + "§cImporto non valido oppure saldo insufficiente.");
             return;
         }
         economy().withdrawPlayer(bettor, amount);
         round.bets.computeIfAbsent(target.getUniqueId(), ignored -> new HashMap<>())
                 .merge(bettor.getUniqueId(), amount, Double::sum);
-        bettor.sendMessage("§aHai scommesso §f" + money(amount) + " §asu §f" + target.getName() + "§a.");
+        bettor.sendMessage(PREFIX + "§aScommessa registrata: §f" + money(amount)
+                + " §asu §f" + target.getName() + "§a.");
     }
 
     public void startSpectating(Player player) {
         ActiveRound round = activeRound;
         if (round == null || !round.playing || round.finishing) {
-            player.sendMessage("§cNon c'è una partita BedWars attiva da spectare.");
+            player.sendMessage(PREFIX + "§cNon è presente alcuna partita BedFight da osservare.");
             return;
         }
         if (round.match.includes(player.getUniqueId())) {
-            player.sendMessage("§cSei già un partecipante del round.");
+            player.sendMessage(PREFIX + "§cSei già un partecipante della partita.");
             return;
         }
         round.spectators.putIfAbsent(player.getUniqueId(), PlayerSnapshot.capture(player));
@@ -311,7 +325,7 @@ public final class BedfightManager {
 
         // FIX 1: modalità spectator mantenuta ogni tick, quindi funziona anche senza OP.
         forceSpectatorMode(player, round);
-        player.sendMessage("§aOra stai spectando il BedWars coinflip.");
+        player.sendMessage(PREFIX + "§aModalità spettatore attivata. §7Ora stai osservando la partita.");
     }
 
     private void forceSpectatorMode(Player player, ActiveRound expectedRound) {
@@ -334,6 +348,28 @@ public final class BedfightManager {
             }
         }, 1L, 1L);
         expectedRound.spectatorTasks.put(player.getUniqueId(), task[0]);
+    }
+
+    private void forceRespawnSpectatorMode(Player player, ActiveRound expectedRound) {
+        BukkitTask previousTask = expectedRound.respawnSpectatorTasks.remove(player.getUniqueId());
+        cancel(previousTask);
+        applySpectatorMode(player);
+        final BukkitTask[] task = new BukkitTask[1];
+        task[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!player.isOnline()
+                    || activeRound != expectedRound
+                    || expectedRound.finishing
+                    || !expectedRound.respawning.contains(player.getUniqueId())) {
+                task[0].cancel();
+                return;
+            }
+            if (player.getGameMode() != GameMode.SPECTATOR
+                    || !player.getAllowFlight()
+                    || !player.isFlying()) {
+                applySpectatorMode(player);
+            }
+        }, 1L, 1L);
+        expectedRound.respawnSpectatorTasks.put(player.getUniqueId(), task[0]);
     }
 
     private void applySpectatorMode(Player player) {
@@ -364,7 +400,9 @@ public final class BedfightManager {
         player.setFireTicks(0);
         player.setFallDistance(0);
         player.getInventory().clear();
-        giveKit(player);
+        player.getInventory().setArmorContents(new ItemStack[4]);
+        player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
+        giveKit(player, isFirstTeam(player.getUniqueId()));
 
         // FIX 3: vale sia per First sia per Opponent, dopo il cambio mondo/teletrasporto.
         restoreFullHealthAfterEntry(player);
@@ -394,13 +432,39 @@ public final class BedfightManager {
         player.setHealth(Math.max(1.0, maximum));
     }
 
-    private void giveKit(Player player) {
-        player.getInventory().addItem(new ItemStack(Material.WOODEN_SWORD));
-        player.getInventory().addItem(new ItemStack(Material.WHITE_WOOL, 64));
-        player.getInventory().addItem(new ItemStack(Material.OAK_PLANKS, 32));
-        player.getInventory().addItem(new ItemStack(Material.END_STONE, 16));
-        player.getInventory().addItem(new ItemStack(Material.WOODEN_PICKAXE));
-        player.getInventory().addItem(new ItemStack(Material.WOODEN_AXE));
+    private void giveKit(Player player, boolean firstTeam) {
+        PlayerInventory inventory = player.getInventory();
+        Color armorColor = firstTeam ? Color.BLUE : Color.RED;
+        Material wool = firstTeam ? Material.BLUE_WOOL : Material.RED_WOOL;
+
+        inventory.setHelmet(coloredLeather(Material.LEATHER_HELMET, armorColor));
+        inventory.setChestplate(coloredLeather(Material.LEATHER_CHESTPLATE, armorColor));
+        inventory.setLeggings(coloredLeather(Material.LEATHER_LEGGINGS, armorColor));
+        inventory.setBoots(coloredLeather(Material.LEATHER_BOOTS, armorColor));
+
+        inventory.setItem(0, new ItemStack(Material.WOODEN_SWORD));
+        inventory.setItem(1, new ItemStack(Material.SHEARS));
+
+        ItemStack pickaxe = new ItemStack(Material.WOODEN_PICKAXE);
+        pickaxe.addEnchantment(Enchantment.EFFICIENCY, 1);
+        inventory.setItem(2, pickaxe);
+
+        ItemStack axe = new ItemStack(Material.WOODEN_AXE);
+        axe.addEnchantment(Enchantment.EFFICIENCY, 1);
+        inventory.setItem(3, axe);
+
+        inventory.setItem(4, new ItemStack(wool, 64));
+        inventory.setItemInOffHand(new ItemStack(wool, 64));
+        player.updateInventory();
+    }
+
+    private ItemStack coloredLeather(Material material, Color color) {
+        ItemStack item = new ItemStack(material);
+        if (item.getItemMeta() instanceof LeatherArmorMeta meta) {
+            meta.setColor(color);
+            item.setItemMeta(meta);
+        }
+        return item;
     }
 
     private void startCountdown(ActiveRound round) {
@@ -422,10 +486,11 @@ public final class BedfightManager {
                 beginPlaying(round);
                 return;
             }
-            first.sendTitle("§e" + seconds[0], "§7Preparati", 0, 18, 2);
-            opponent.sendTitle("§e" + seconds[0], "§7Preparati", 0, 18, 2);
-            first.playSound(first.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 1.2f);
-            opponent.playSound(opponent.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 0.8f, 1.2f);
+            first.sendTitle("§e§l" + seconds[0], "§7Preparati al combattimento", 0, 18, 2);
+            opponent.sendTitle("§e§l" + seconds[0], "§7Preparati al combattimento", 0, 18, 2);
+            float pitch = Math.min(2.0f, 0.9f + (configured - seconds[0]) * 0.12f);
+            playSound(first, Sound.BLOCK_NOTE_BLOCK_PLING, 0.9f, pitch);
+            playSound(opponent, Sound.BLOCK_NOTE_BLOCK_PLING, 0.9f, pitch);
             seconds[0]--;
         }, 0L, 20L);
     }
@@ -440,8 +505,88 @@ public final class BedfightManager {
             Player player = Bukkit.getPlayer(id);
             if (player != null) {
                 restoreFullHealthAfterEntry(player);
-                player.sendTitle("§aVIA!", "§7Distruggi il letto avversario", 0, 30, 10);
+                player.sendTitle("§a§lVIA!", "§fDistruggi il letto avversario e conquista la vittoria", 0, 35, 10);
+                playSound(player, Sound.ENTITY_ENDER_DRAGON_GROWL, 0.7f, 1.35f);
+                Bukkit.getScheduler().runTaskLater(plugin,
+                        () -> playSound(player, Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.1f), 8L);
             }
+        }
+        scheduleDeathmatch(round);
+    }
+
+    private void scheduleDeathmatch(ActiveRound round) {
+        long bedPhaseSeconds = Math.max(1L,
+                plugin.getConfig().getLong("bedwars.beds-auto-destroy-seconds", 300L));
+        long damagePhaseDelaySeconds = Math.max(1L,
+                plugin.getConfig().getLong("bedwars.deathmatch-damage-delay-seconds", 180L));
+
+        round.bedDestructionTask = Bukkit.getScheduler().runTaskLater(
+                plugin, () -> startBedDestructionPhase(round), bedPhaseSeconds * 20L);
+        round.deathmatchStartTask = Bukkit.getScheduler().runTaskLater(
+                plugin, () -> startDamageDeathmatch(round),
+                (bedPhaseSeconds + damagePhaseDelaySeconds) * 20L);
+    }
+
+    private void startBedDestructionPhase(ActiveRound round) {
+        if (activeRound != round || round.finishing || !round.playing) return;
+        round.match.setFirstBedAlive(false);
+        round.match.setOpponentBedAlive(false);
+        removeBedBlocks(round.firstBed);
+        removeBedBlocks(round.opponentBed);
+
+        broadcastRound(round,
+                "§6§lDEATHMATCH I §8» §eEntrambi i letti sono stati distrutti. Da questo momento non sono più disponibili respawn.");
+        showRoundTitle(round, "§6§lDEATHMATCH", "§cI letti sono stati distrutti");
+        playRoundSound(round, Sound.ENTITY_WITHER_SPAWN, 0.8f, 1.0f);
+        Bukkit.getScheduler().runTaskLater(plugin,
+                () -> playRoundSound(round, Sound.ENTITY_LIGHTNING_BOLT_THUNDER, 0.7f, 1.15f), 12L);
+    }
+
+    private void startDamageDeathmatch(ActiveRound round) {
+        if (activeRound != round || round.finishing || !round.playing) return;
+        if (round.match.isFirstBedAlive() || round.match.isOpponentBedAlive()) {
+            startBedDestructionPhase(round);
+        }
+
+        round.deathmatchDamage = Math.max(0.5,
+                plugin.getConfig().getDouble("bedwars.deathmatch-starting-damage", 1.0));
+        broadcastRound(round,
+                "§4§lDEATHMATCH II §8» §cIl danno globale è iniziato e aumenterà ogni secondo.");
+        showRoundTitle(round, "§4§lDEATHMATCH II", "§cIl danno aumenta ogni secondo");
+        playRoundSound(round, Sound.ENTITY_ENDER_DRAGON_GROWL, 1.0f, 0.75f);
+
+        round.deathmatchDamageTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (activeRound != round || round.finishing || !round.playing) {
+                cancel(round.deathmatchDamageTask);
+                return;
+            }
+
+            double damage = round.deathmatchDamage;
+            for (UUID playerId : List.of(round.match.getCreator(), round.match.getOpponent())) {
+                Player player = Bukkit.getPlayer(playerId);
+                if (player == null || !player.isOnline() || round.respawning.contains(playerId)) continue;
+
+                if (player.getHealth() - damage <= HALF_HEART) {
+                    eliminateOrRespawn(player, "deathmatch");
+                    if (activeRound != round || round.finishing) return;
+                } else {
+                    player.setHealth(Math.max(HALF_HEART, player.getHealth() - damage));
+                    player.sendActionBar("§4§lDEATHMATCH §8• §c-" + formatHealth(damage)
+                            + " HP §8• §7Il danno continua ad aumentare");
+                    playSound(player, Sound.ENTITY_BLAZE_HURT, 0.75f, 0.8f);
+                }
+            }
+
+            double increase = Math.max(0.0,
+                    plugin.getConfig().getDouble("bedwars.deathmatch-damage-increase", 1.0));
+            round.deathmatchDamage += increase;
+        }, 0L, 20L);
+    }
+
+    private void removeBedBlocks(Set<BlockKey> bed) {
+        for (BlockKey key : bed) {
+            Block block = key.getBlock();
+            if (block != null) block.setType(Material.AIR, false);
         }
     }
 
@@ -471,20 +616,24 @@ public final class BedfightManager {
         if (!worldChanged && !positionChanged) return;
 
         if (round.spawnProtectedUntil.remove(id) != null) {
-            player.sendMessage("§cProtezione spawn disattivata: ti sei mosso.");
+            player.sendMessage(PREFIX + "§eProtezione iniziale terminata a causa del movimento.");
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 0.6f, 1.0f);
         }
     }
 
     public void recordLastDamager(Player victim, Player attacker) {
+        if (victim == null || attacker == null) return;
         if (!isActiveParticipant(victim.getUniqueId()) || !isActiveParticipant(attacker.getUniqueId())) return;
         lastHits.put(victim.getUniqueId(), new LastHit(attacker.getUniqueId(), System.currentTimeMillis()));
     }
 
     public boolean canDamage(Player attacker, Player victim) {
         ActiveRound round = activeRound;
-        if (round == null || !round.playing || round.finishing) return false;
-        if (!round.match.includes(attacker.getUniqueId()) || !round.match.includes(victim.getUniqueId())) return false;
+        if (round == null) return true;
+        boolean attackerInRound = attacker != null && round.match.includes(attacker.getUniqueId());
+        boolean victimInRound = victim != null && round.match.includes(victim.getUniqueId());
+        if (!attackerInRound && !victimInRound) return true;
+        if (!round.playing || round.finishing || !attackerInRound || !victimInRound) return false;
         if (round.respawning.contains(attacker.getUniqueId()) || round.respawning.contains(victim.getUniqueId())) return false;
         if (hasSpawnProtection(round, victim.getUniqueId())) return false;
         round.spawnProtectedUntil.remove(attacker.getUniqueId());
@@ -501,7 +650,7 @@ public final class BedfightManager {
 
     public boolean handlePotentialElimination(Player player, double finalDamage) {
         if (!isActiveParticipant(player.getUniqueId()) || !isPlaying()) return false;
-        if (player.getHealth() - finalDamage > 0.0) return false;
+        if (player.getHealth() - finalDamage > HALF_HEART) return false;
         eliminateOrRespawn(player, "combattimento");
         return true;
     }
@@ -510,9 +659,10 @@ public final class BedfightManager {
         if (isActiveParticipant(player.getUniqueId())) eliminateOrRespawn(player, "morte");
     }
 
-    public void handleVoidLevel(Player player) {
+    public void handleVoidLevel(Player player, Location destination) {
         if (!isActiveParticipant(player.getUniqueId()) || !isPlaying()) return;
-        if (player.getLocation().getY() <= plugin.getConfig().getDouble("bedwars.void-y", 43.0)) {
+        Location checked = destination == null ? player.getLocation() : destination;
+        if (checked.getY() <= plugin.getConfig().getDouble("bedwars.void-y", 64.0)) {
             eliminateOrRespawn(player, "void");
         }
     }
@@ -530,9 +680,15 @@ public final class BedfightManager {
         round.respawning.add(player.getUniqueId());
         round.spawnProtectedUntil.remove(player.getUniqueId());
         player.setHealth(Math.max(1.0, maxHealth(player)));
-        player.setGameMode(GameMode.SPECTATOR);
         player.getInventory().clear();
-        player.sendTitle("§cSei morto", "§7Respawn in 3 secondi", 0, 40, 10);
+        player.getInventory().setArmorContents(new ItemStack[4]);
+        player.getInventory().setItemInOffHand(new ItemStack(Material.AIR));
+        forceRespawnSpectatorMode(player, round);
+        player.sendTitle("§c§lELIMINATO", "§fRientro in arena tra 3 secondi", 0, 40, 10);
+        player.sendMessage(PREFIX + "§eSei stato eliminato temporaneamente. Preparazione del respawn in corso.");
+        playSound(player, Sound.ENTITY_ITEM_BREAK, 1.0f, 0.65f);
+        Bukkit.getScheduler().runTaskLater(plugin,
+                () -> playSound(player, Sound.BLOCK_NOTE_BLOCK_BASS, 0.8f, 0.55f), 8L);
         long delay = Math.max(1L, plugin.getConfig().getLong("bedwars.respawn-delay-ticks", 60L));
         Bukkit.getScheduler().runTaskLater(plugin, () -> respawnParticipant(player.getUniqueId(), round), delay);
     }
@@ -545,11 +701,15 @@ public final class BedfightManager {
             finishRound(winner, false, "§cUn partecipante si è disconnesso.");
             return;
         }
+        BukkitTask spectatorTask = expectedRound.respawnSpectatorTasks.remove(playerId);
+        cancel(spectatorTask);
         expectedRound.respawning.remove(playerId);
         Location location = getRespawnLocation(playerId);
         prepareFighter(player, location);
         expectedRound.spawnProtectedUntil.put(playerId, protectionDeadline());
-        player.sendMessage("§aRespawn effettuato. §eLa protezione sparisce appena ti muovi o attacchi.");
+        player.sendTitle("§a§lRESPAWN", "§fProtezione attiva finché non ti muovi o attacchi", 0, 35, 10);
+        player.sendMessage(PREFIX + "§aRespawn completato. §7La protezione termina al primo movimento o attacco.");
+        playSound(player, Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.25f);
     }
 
     public Location getRespawnLocation(UUID playerId) {
@@ -617,20 +777,38 @@ public final class BedfightManager {
                 && to.getWorld().getUID().equals(round.world.getUID());
     }
 
-    public void handleBlockPlace(Player player, Block block) {
+    public boolean handleBlockPlace(Player player, Block block, BlockData replacedData) {
         ActiveRound round = activeRound;
-        if (round == null || !round.playing || !round.match.includes(player.getUniqueId())) return;
+        if (!isProtectedBedfightRound(round, block.getWorld())) return true;
+        if (!round.match.includes(player.getUniqueId())) return false;
+
+        int maxHeight = plugin.getConfig().getInt("bedwars.max-build-height", 90);
+        if (block.getY() > maxHeight) {
+            player.sendMessage(PREFIX + "§cLimite di costruzione raggiunto. §7Non puoi piazzare blocchi sopra Y="
+                    + maxHeight + ".");
+            playSound(player, Sound.BLOCK_NOTE_BLOCK_BASS, 0.8f, 0.7f);
+            return false;
+        }
+
         BlockKey key = BlockKey.of(block);
-        round.originalBlocks.putIfAbsent(key, Material.AIR.createBlockData());
+        BlockData original = replacedData == null ? Material.AIR.createBlockData() : replacedData.clone();
+        round.originalBlocks.putIfAbsent(key, original);
+        return true;
     }
 
     public BreakResult handleBlockBreak(Player player, Block block) {
         ActiveRound round = activeRound;
-        if (round == null || !round.playing || !round.match.includes(player.getUniqueId())) return BreakResult.DENY;
+        if (!isProtectedBedfightRound(round, block.getWorld())) return BreakResult.ALLOW;
+        if (!round.match.includes(player.getUniqueId())) return BreakResult.DENY;
+
         Set<BlockKey> ownBed = ownBedKeys(round, player.getUniqueId());
         Set<BlockKey> enemyBed = enemyBedKeys(round, player.getUniqueId());
         BlockKey key = BlockKey.of(block);
-        if (ownBed.contains(key)) return BreakResult.OWN_BED;
+        if (ownBed.contains(key)) {
+            player.sendMessage(PREFIX + "§cNon puoi distruggere il letto della tua squadra.");
+            playSound(player, Sound.BLOCK_NOTE_BLOCK_BASS, 0.8f, 0.65f);
+            return BreakResult.OWN_BED;
+        }
         if (enemyBed.contains(key)) {
             if (round.match.getCreator().equals(player.getUniqueId())) round.match.setOpponentBedAlive(false);
             else round.match.setFirstBedAlive(false);
@@ -638,11 +816,19 @@ public final class BedfightManager {
                 Block bedBlock = bedKey.getBlock();
                 if (bedBlock != null) bedBlock.setType(Material.AIR, false);
             }
-            broadcastRound(round, "§cIl letto di §f" + round.match.getName(round.match.getOtherParticipant(player.getUniqueId()))
-                    + " §cè stato distrutto da §f" + player.getName() + "§c!");
+            broadcastRound(round, "§c§lLETTO DISTRUTTO §8» §f" + player.getName()
+                    + " §7ha distrutto il letto di §f"
+                    + round.match.getName(round.match.getOtherParticipant(player.getUniqueId())) + "§7.");
+            showRoundTitle(round, "§c§lLETTO DISTRUTTO", "§f" + player.getName() + " §7ha colpito");
+            playRoundSound(round, Sound.ENTITY_LIGHTNING_BOLT_THUNDER, 0.8f, 1.25f);
             return BreakResult.ENEMY_BED;
         }
-        if (!isBreakablePlacedMaterial(block.getType()) && !round.originalBlocks.containsKey(key)) return BreakResult.DENY;
+        if (!isAllowedBreakMaterial(block.getType())) {
+            player.sendMessage(PREFIX
+                    + "§cQuesto blocco è protetto. §7Puoi rompere soltanto lana, end stone e legno di quercia.");
+            playSound(player, Sound.BLOCK_NOTE_BLOCK_BASS, 0.6f, 0.7f);
+            return BreakResult.DENY;
+        }
         round.originalBlocks.putIfAbsent(key, block.getBlockData().clone());
         return BreakResult.ALLOW;
     }
@@ -650,7 +836,7 @@ public final class BedfightManager {
     public boolean isUndroppableKitItem(ItemStack item) {
         if (item == null) return false;
         return switch (item.getType()) {
-            case WOODEN_SWORD, WOODEN_PICKAXE, WOODEN_AXE -> true;
+            case WOODEN_SWORD, SHEARS, WOODEN_PICKAXE, WOODEN_AXE -> true;
             default -> false;
         };
     }
@@ -742,7 +928,11 @@ public final class BedfightManager {
         round.finishing = true;
         round.match.setState(BedfightCoinflip.State.FINISHED);
         cancel(round.countdownTask);
+        cancel(round.bedDestructionTask);
+        cancel(round.deathmatchStartTask);
+        cancel(round.deathmatchDamageTask);
         for (BukkitTask task : round.spectatorTasks.values()) cancel(task);
+        for (BukkitTask task : round.respawnSpectatorTasks.values()) cancel(task);
 
         if (reason != null) broadcastRound(round, reason);
         if (refund || winnerId == null) {
@@ -753,7 +943,13 @@ public final class BedfightManager {
             double prize = round.match.getAmount() * 2.0;
             economy().depositPlayer(Bukkit.getOfflinePlayer(winnerId), prize);
             Player winner = Bukkit.getPlayer(winnerId);
-            if (winner != null) winner.sendMessage("§6Hai vinto §f" + money(prize) + "§6!");
+            if (winner != null) {
+                winner.sendTitle("§6§lVITTORIA", "§fPremio: §e" + money(prize), 5, 60, 15);
+                winner.sendMessage(PREFIX + "§6Congratulazioni! Hai vinto §f" + money(prize) + "§6.");
+                playSound(winner, Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
+                Bukkit.getScheduler().runTaskLater(plugin,
+                        () -> playSound(winner, Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.3f), 10L);
+            }
             payBets(round, winnerId);
         }
 
@@ -874,10 +1070,25 @@ public final class BedfightManager {
         return block;
     }
 
-    private boolean isBreakablePlacedMaterial(Material material) {
-        String name = material.name();
-        return material == Material.END_STONE || name.endsWith("_WOOL") || name.endsWith("_PLANKS")
-                || name.endsWith("_LOG") || name.endsWith("_WOOD");
+    private boolean isAllowedBreakMaterial(Material material) {
+        return material == Material.END_STONE
+                || material == Material.OAK_PLANKS
+                || material == Material.OAK_LOG
+                || material == Material.OAK_WOOD
+                || material.name().endsWith("_WOOL");
+    }
+
+    private boolean isProtectedBedfightRound(ActiveRound round, World world) {
+        return round != null
+                && round.playing
+                && !round.finishing
+                && world != null
+                && world.getName().equalsIgnoreCase(BEDFIGHT_WORLD);
+    }
+
+    private boolean isFirstTeam(UUID playerId) {
+        ActiveRound round = activeRound;
+        return round != null && round.match.getCreator().equals(playerId);
     }
 
     private void broadcastRound(ActiveRound round, String message) {
@@ -887,8 +1098,36 @@ public final class BedfightManager {
         recipients.addAll(round.spectators.keySet());
         for (UUID id : recipients) {
             Player player = Bukkit.getPlayer(id);
-            if (player != null) player.sendMessage(message);
+            if (player != null) player.sendMessage(PREFIX + message);
         }
+    }
+
+    private void showRoundTitle(ActiveRound round, String title, String subtitle) {
+        for (UUID id : List.of(round.match.getCreator(), round.match.getOpponent())) {
+            Player player = Bukkit.getPlayer(id);
+            if (player != null) player.sendTitle(title, subtitle, 5, 50, 15);
+        }
+    }
+
+    private void playRoundSound(ActiveRound round, Sound sound, float volume, float pitch) {
+        Set<UUID> recipients = new HashSet<>();
+        recipients.add(round.match.getCreator());
+        recipients.add(round.match.getOpponent());
+        recipients.addAll(round.spectators.keySet());
+        for (UUID id : recipients) {
+            Player player = Bukkit.getPlayer(id);
+            if (player != null) playSound(player, sound, volume, pitch);
+        }
+    }
+
+    private void playSound(Player player, Sound sound, float volume, float pitch) {
+        if (player != null && player.isOnline()) {
+            player.playSound(player.getLocation(), sound, volume, pitch);
+        }
+    }
+
+    private String formatHealth(double value) {
+        return String.format(Locale.US, "%.1f", value);
     }
 
     private String money(double amount) {
@@ -937,10 +1176,15 @@ public final class BedfightManager {
         private final Map<UUID, PlayerSnapshot> snapshots = new HashMap<>();
         private final Map<UUID, PlayerSnapshot> spectators = new HashMap<>();
         private final Map<UUID, BukkitTask> spectatorTasks = new HashMap<>();
+        private final Map<UUID, BukkitTask> respawnSpectatorTasks = new HashMap<>();
         private final Map<UUID, Long> spawnProtectedUntil = new HashMap<>();
         private final Set<UUID> respawning = new HashSet<>();
         private final Map<UUID, Map<UUID, Double>> bets = new HashMap<>();
         private BukkitTask countdownTask;
+        private BukkitTask bedDestructionTask;
+        private BukkitTask deathmatchStartTask;
+        private BukkitTask deathmatchDamageTask;
+        private double deathmatchDamage;
         private boolean playing;
         private boolean finishing;
 
