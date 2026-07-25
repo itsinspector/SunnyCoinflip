@@ -27,8 +27,8 @@ bedwars:
   void-y: 64
   respawn-delay-ticks: 60
 
-  # Invulnerabilità dopo l'inizio e dopo ogni rientro. 60 tick = 3 secondi.
-  spawn-protection-ticks: 60
+  # Invulnerabilità dopo l'inizio e dopo ogni rientro. 40 tick = 2 secondi.
+  spawn-protection-ticks: 40
 
   # Deathmatch I: dopo 5 minuti entrambi i letti vengono distrutti.
   beds-auto-destroy-seconds: 300

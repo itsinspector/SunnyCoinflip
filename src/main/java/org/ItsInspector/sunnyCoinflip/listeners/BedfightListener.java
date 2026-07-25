@@ -6,6 +6,7 @@ import org.ItsInspector.sunnyCoinflip.managers.BedfightManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
@@ -31,7 +32,7 @@ import org.bukkit.event.player.PlayerKickEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
-import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.projectiles.ProjectileSource;
 
 public final class BedfightListener implements Listener {
@@ -83,6 +84,14 @@ public final class BedfightListener implements Listener {
         } else if (result == BedfightManager.BreakResult.ENEMY_BED) {
             event.setDropItems(false);
             event.setExpToDrop(0);
+        } else if (result == BedfightManager.BreakResult.ALLOW
+                && this.manager().isBlockProtectionActive(event.getBlock().getWorld())) {
+            Material brokenType = event.getBlock().getType();
+            event.setDropItems(false);
+            event.setExpToDrop(0);
+            event.getBlock().getWorld().dropItemNaturally(
+                    event.getBlock().getLocation().add(0.5, 0.25, 0.5),
+                    new ItemStack(brokenType, 1));
         }
     }
 
@@ -123,22 +132,7 @@ public final class BedfightListener implements Listener {
             }
 
             event.setTo(from);
-            return;
         }
-
-        this.manager().handleSpawnProtectionMovement(event.getPlayer(), event.getFrom(), event.getTo());
-    }
-
-    @EventHandler(
-            priority = EventPriority.HIGHEST,
-            ignoreCancelled = true
-    )
-    public void onTeleport(PlayerTeleportEvent event) {
-        if (!this.manager().canLeaveArena(event.getPlayer(), event.getTo())) {
-            event.setCancelled(true);
-            event.getPlayer().sendMessage("§8[§bBedFight§8] §r§cNon puoi lasciare l'arena mentre la partita è in corso.");
-        }
-
     }
 
     @EventHandler
@@ -151,16 +145,15 @@ public final class BedfightListener implements Listener {
     )
     public void onDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
-        if (player.getWorld().getName().equalsIgnoreCase("bedfight")) {
-            event.setDeathMessage(this.buildBedfightDeathMessage(player));
-        }
-
         if (this.manager().isActiveParticipant(player.getUniqueId())) {
+            event.setDeathMessage(null);
             event.getDrops().clear();
             event.setDroppedExp(0);
             event.setKeepInventory(false);
             event.setKeepLevel(false);
             this.manager().handleDeath(player);
+        } else if (player.getWorld().getName().equalsIgnoreCase("bedfight")) {
+            event.setDeathMessage(this.buildBedfightDeathMessage(player));
         }
     }
 
@@ -223,7 +216,10 @@ public final class BedfightListener implements Listener {
             if (!this.manager().canTakeDamage(player)) {
                 event.setCancelled(true);
             } else {
-                if (this.manager().handlePotentialElimination(player, event.getFinalDamage())) {
+                if (this.manager().handlePotentialElimination(
+                        player,
+                        event.getFinalDamage(),
+                        event.getCause())) {
                     event.setCancelled(true);
                 }
 
@@ -233,19 +229,6 @@ public final class BedfightListener implements Listener {
 
     @EventHandler(
             priority = EventPriority.LOWEST,
-            ignoreCancelled = true
-    )
-    public void onRecordDamager(EntityDamageByEntityEvent event) {
-        Entity var3 = event.getEntity();
-        if (var3 instanceof Player victim) {
-            Player attacker = this.resolvePlayer(event.getDamager());
-            this.manager().recordLastDamager(victim, attacker);
-        }
-
-    }
-
-    @EventHandler(
-            priority = EventPriority.HIGHEST,
             ignoreCancelled = true
     )
     public void onDamageByEntity(EntityDamageByEntityEvent event) {
@@ -339,7 +322,7 @@ public final class BedfightListener implements Listener {
                     case FIRE_TICK:
                     case LAVA:
                     case HOT_FLOOR:
-                        var10000 = "§c☠ §f" + player.getName() + " §7è finito arrosto.";
+                        var10000 = "§c☠ §f" + player.getName() + " §7è morto tra le fiamme.";
                         break;
                     case PROJECTILE:
                         var10000 = "§c☠ §f" + player.getName() + " §7è stato colpito a distanza.";
@@ -349,10 +332,10 @@ public final class BedfightListener implements Listener {
                         var10000 = "§c☠ §f" + player.getName() + " §7è esploso.";
                         break;
                     case DROWNING:
-                        var10000 = "§c☠ §f" + player.getName() + " §7non sapeva nuotare.";
+                        var10000 = "§c☠ §f" + player.getName() + " §7è annegato.";
                         break;
                     case SUFFOCATION:
-                        var10000 = "§c☠ §f" + player.getName() + " §7è rimasto incastrato nei blocchi.";
+                        var10000 = "§c☠ §f" + player.getName() + " §7è soffocato.";
                         break;
                     default:
                         var10000 = "§c☠ §f" + player.getName() + " §7è stato eliminato.";
