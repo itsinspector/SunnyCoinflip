@@ -689,11 +689,20 @@ public final class BedfightManager {
         }
 
         if (horizontalLength >= 1.0E-6) {
-            double horizontalStrength = attacker.isSprinting() ? 0.5 : 0.4;
+            double horizontalStrength = attacker.isSprinting()
+                    ? Math.max(0.0, plugin.getConfig().getDouble(
+                    "bedfight.combat.sprint-horizontal-knockback", 0.42))
+                    : Math.max(0.0, plugin.getConfig().getDouble(
+                    "bedfight.combat.horizontal-knockback", 0.36));
             knockback.setX(knockback.getX() / horizontalLength * horizontalStrength);
             knockback.setZ(knockback.getZ() / horizontalLength * horizontalStrength);
         }
-        knockback.setY(Math.max(0.35, Math.min(0.4, knockback.getY())));
+        double verticalStrength = Math.max(0.0, plugin.getConfig().getDouble(
+                victim.isOnGround()
+                        ? "bedfight.combat.vertical-knockback"
+                        : "bedfight.combat.airborne-vertical-knockback",
+                victim.isOnGround() ? 0.35 : 0.28));
+        knockback.setY(verticalStrength);
         event.setFinalKnockback(knockback);
     }
 
