@@ -4,18 +4,26 @@ import java.util.Locale;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.ItsInspector.sunnyCoinflip.SunnyCoinflip;
 import org.ItsInspector.sunnyCoinflip.managers.BedfightManager;
+import org.ItsInspector.sunnyCoinflip.models.BedfightCoinflip;
+import org.ItsInspector.sunnyCoinflip.utils.ItemBuilder;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
 
 public final class BedfightExpansion extends PlaceholderExpansion {
     private final SunnyCoinflip plugin;
+    private final String identifier;
 
     public BedfightExpansion(SunnyCoinflip plugin) {
+        this(plugin, "bedfight");
+    }
+
+    public BedfightExpansion(SunnyCoinflip plugin, String identifier) {
         this.plugin = plugin;
+        this.identifier = identifier;
     }
 
     public String getIdentifier() {
-        return "bedfight";
+        return this.identifier;
     }
 
     public String getAuthor() {
@@ -41,8 +49,12 @@ public final class BedfightExpansion extends PlaceholderExpansion {
                 case "disponibile":
                     var10000 = this.colored(manager.isAvailable() ? this.configText("bedfight.placeholders.available", "&aDisponibile") : this.configText("bedfight.placeholders.unavailable", "&cNon disponibile"));
                     break;
+                case "round_status":
                 case "status":
                 case "state":
+                    var10000 = this.roundStatus(manager);
+                    break;
+                case "detailed_status":
                     var10000 = this.detailedStatus(manager);
                     break;
                 case "available_boolean":
@@ -65,6 +77,25 @@ public final class BedfightExpansion extends PlaceholderExpansion {
 
             return var10000;
         }
+    }
+
+    private String roundStatus(BedfightManager manager) {
+        if (!manager.isEnabled() || !manager.isArenaConfigured()
+                || manager.getActiveMatch() != null) {
+            return ItemBuilder.translate("&f\ue060&c&lɴᴏɴ ᴅɪѕᴘᴏɴɪʙɪʟᴇ.");
+        }
+
+        BedfightCoinflip waiting = manager.getWaitingChallenges()
+                .stream()
+                .findFirst()
+                .orElse(null);
+        if (waiting != null) {
+            return ItemBuilder.translate(
+                    "&f\ue03c &a&lᴜɴɪѕᴄɪᴛɪ ᴘᴇʀ &f\ue0d8&e"
+                            + String.format("%.0f", waiting.getAmount()));
+        }
+
+        return ItemBuilder.translate("&a&lᴅɪѕᴘᴏɴɪʙɪʟᴇ.");
     }
 
     private String detailedStatus(BedfightManager manager) {

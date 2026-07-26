@@ -58,6 +58,7 @@ public final class SunnyCoinflip extends JavaPlugin {
             if (this.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
                 (new PillarExpansion(this)).register();
                 (new BedfightExpansion(this)).register();
+                (new BedfightExpansion(this, "bedwars")).register();
             }
 
         }

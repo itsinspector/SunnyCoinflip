@@ -208,18 +208,14 @@ public class PillarListener implements Listener {
                             p2.sendMessage("§aɪɴɪᴢɪᴏ!");
                             p1.playSound(p1, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
                             p2.playSound(p2, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0F, 1.0F);
-                            p1.setHealth(p1.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-                            p1.setFoodLevel(20);
-                            p2.setHealth(p2.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-                            p2.setFoodLevel(20);
+                            PillarListener.this.restorePillarPlayer(p1);
+                            PillarListener.this.restorePillarPlayer(p2);
                             (new BukkitRunnable() {
                                 @Override
                                 public void run() {
                                     match.setPlaying(true);
-                                    p1.setHealth(p1.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-                                    p1.setFoodLevel(20);
-                                    p2.setHealth(p2.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-                                    p2.setFoodLevel(20);
+                                    PillarListener.this.restorePillarPlayer(p1);
+                                    PillarListener.this.restorePillarPlayer(p2);
                                     PillarListener.this.startDropping(p1, p2, match);
                                     PillarListener.this.startDeathmatchTimer(match);
                                 }
@@ -377,7 +373,7 @@ public class PillarListener implements Listener {
         long lifetimeSeconds = Math.max(
                 1L,
                 this.plugin.getConfig().getLong("pillars.mob-lifetime-seconds", 10L));
-        meta.setDisplayName(type.color + "§lUovo di " + type.displayName);
+        meta.setDisplayName(type.color + "§l" + type.displayName);
         meta.setLore(List.of(
                 "§7Evoca un alleato che attacca",
                 "§7il tuo avversario per §f" + lifetimeSeconds + " secondi§7."));
@@ -544,6 +540,13 @@ public class PillarListener implements Listener {
 
     }
 
+    private void restorePillarPlayer(Player player) {
+        new ArrayList<>(player.getActivePotionEffects())
+                .forEach(effect -> player.removePotionEffect(effect.getType()));
+        player.setHealth(player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+        player.setFoodLevel(20);
+    }
+
     public void handleServerShutdown() {
         PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
         if (match != null) {
@@ -553,8 +556,7 @@ public class PillarListener implements Listener {
             if (p1 != null && p1.isOnline()) {
                 p1.getInventory().clear();
                 p1.setGameMode(GameMode.SURVIVAL);
-                p1.setHealth(p1.getMaxHealth());
-                p1.setFoodLevel(20);
+                this.restorePillarPlayer(p1);
                 Location respawn = this.plugin.getGameManager().getPlayerReturn(p1.getUniqueId());
                 if (respawn != null) {
                     p1.teleport(respawn);
@@ -567,8 +569,7 @@ public class PillarListener implements Listener {
             if (p2 != null && p2.isOnline()) {
                 p2.getInventory().clear();
                 p2.setGameMode(GameMode.SURVIVAL);
-                p2.setHealth(p2.getMaxHealth());
-                p2.setFoodLevel(20);
+                this.restorePillarPlayer(p2);
                 Location respawn = this.plugin.getGameManager().getPlayerReturn(p2.getUniqueId());
                 if (respawn != null) {
                     p2.teleport(respawn);
@@ -596,8 +597,7 @@ public class PillarListener implements Listener {
         if (winner != null && winner.isOnline()) {
             winner.setGameMode(GameMode.SPECTATOR);
             winner.getInventory().clear();
-            winner.setHealth(winner.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-            winner.setFoodLevel(20);
+            this.restorePillarPlayer(winner);
             winner.playSound(winner, Sound.ENTITY_ENDER_DRAGON_DEATH, 0.5F, 1.0F);
             winner.sendTitle(ItemBuilder.translate("§a§lVITTORIA!"), "", 10, 80, 10);
             this.handleBets(winner, match);
@@ -610,9 +610,8 @@ public class PillarListener implements Listener {
         if (loser != null && loser.isOnline()) {
             loser.setGameMode(GameMode.SPECTATOR);
             loser.getInventory().clear();
-            loser.setHealth(loser.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
+            this.restorePillarPlayer(loser);
             loser.playSound(loser, Sound.ENTITY_ENDER_DRAGON_DEATH, 0.5F, 1.0F);
-            loser.setFoodLevel(20);
             loser.sendTitle(ItemBuilder.translate("§c§lSCONFITTA!"), "", 10, 80, 10);
             SunnyCoinflip.getEconomy().withdrawPlayer(loser, match.getAmount());
         }
@@ -621,6 +620,7 @@ public class PillarListener implements Listener {
             public void run() {
                 if (winner != null && winner.isOnline()) {
                     winner.setGameMode(GameMode.SURVIVAL);
+                    PillarListener.this.restorePillarPlayer(winner);
                     Location respawn = PillarListener.this.plugin.getGameManager().getPlayerReturn(winner.getUniqueId());
                     if (respawn != null) {
                         winner.teleport(respawn);
@@ -630,6 +630,7 @@ public class PillarListener implements Listener {
 
                 if (loser != null && loser.isOnline()) {
                     loser.setGameMode(GameMode.SURVIVAL);
+                    PillarListener.this.restorePillarPlayer(loser);
                     Location respawn = PillarListener.this.plugin.getGameManager().getPlayerReturn(loser.getUniqueId());
                     if (respawn != null) {
                         loser.teleport(respawn);
@@ -716,8 +717,7 @@ public class PillarListener implements Listener {
                     this.plugin.getGameManager().setActivePillarMatch((PillarMatch)null);
                     UUID otherUUID = playerUUID.equals(match.getCreator()) ? match.getOpponent() : match.getCreator();
                     if (player.isOnline()) {
-                        player.setHealth(player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-                        player.setFoodLevel(20);
+                        this.restorePillarPlayer(player);
                         Location respawn = this.plugin.getGameManager().getPlayerReturn(playerUUID);
                         if (respawn != null) {
                             player.teleport(respawn);
@@ -728,8 +728,7 @@ public class PillarListener implements Listener {
                     if (otherUUID != null) {
                         Player other = Bukkit.getPlayer(otherUUID);
                         if (other != null && other.isOnline()) {
-                            other.setHealth(other.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-                            other.setFoodLevel(20);
+                            this.restorePillarPlayer(other);
                             other.sendMessage("§cLo sfidante è uscito o la partita è stata annullata.");
                             Location respawn = this.plugin.getGameManager().getPlayerReturn(otherUUID);
                             if (respawn != null) {
@@ -753,8 +752,7 @@ public class PillarListener implements Listener {
         Player player = event.getPlayer();
         Location respawn = this.plugin.getGameManager().getPlayerReturn(player.getUniqueId());
         if (respawn != null) {
-            player.setHealth(player.getAttribute(Attribute.GENERIC_MAX_HEALTH).getValue());
-            player.setFoodLevel(20);
+            this.restorePillarPlayer(player);
             player.teleport(respawn);
             this.plugin.getGameManager().removePlayerReturn(player.getUniqueId());
         }
@@ -1005,61 +1003,61 @@ public class PillarListener implements Listener {
         WITHER(
                 Material.WITHER_SPAWN_EGG,
                 EntityType.WITHER,
-                "Wither",
+                "Sans",
                 "§5",
                 Sound.ENTITY_WITHER_SPAWN),
         GHAST(
                 Material.GHAST_SPAWN_EGG,
                 EntityType.GHAST,
-                "Ghast",
+                "Ex Furiosa",
                 "§f",
                 Sound.ENTITY_GHAST_SCREAM),
         BLAZE(
                 Material.BLAZE_SPAWN_EGG,
                 EntityType.BLAZE,
-                "Blaze",
+                "Terrorista aereo",
                 "§6",
                 Sound.ENTITY_BLAZE_AMBIENT),
         ZOMBIE(
                 Material.ZOMBIE_SPAWN_EGG,
                 EntityType.ZOMBIE,
-                "Zombie",
+                "Non Morto",
                 "§2",
                 Sound.ENTITY_ZOMBIE_AMBIENT),
         SKELETON(
                 Material.SKELETON_SPAWN_EGG,
                 EntityType.SKELETON,
-                "Scheletro",
+                "Mario Ruggero",
                 "§7",
                 Sound.ENTITY_SKELETON_AMBIENT),
         CREEPER(
                 Material.CREEPER_SPAWN_EGG,
                 EntityType.CREEPER,
-                "Creeper",
+                "Terrorista",
                 "§a",
                 Sound.ENTITY_CREEPER_PRIMED),
         SPIDER(
                 Material.SPIDER_SPAWN_EGG,
                 EntityType.SPIDER,
-                "Ragno",
+                "Abominio",
                 "§8",
                 Sound.ENTITY_SPIDER_AMBIENT),
         ENDERMAN(
                 Material.ENDERMAN_SPAWN_EGG,
                 EntityType.ENDERMAN,
-                "Enderman",
+                "Ombra",
                 "§5",
                 Sound.ENTITY_ENDERMAN_SCREAM),
         WITCH(
                 Material.WITCH_SPAWN_EGG,
                 EntityType.WITCH,
-                "Strega",
+                "Dynamike",
                 "§d",
                 Sound.ENTITY_WITCH_AMBIENT),
         VINDICATOR(
                 Material.VINDICATOR_SPAWN_EGG,
                 EntityType.VINDICATOR,
-                "Vendicatore",
+                "Maranza",
                 "§c",
                 Sound.ENTITY_VINDICATOR_AMBIENT);
 
