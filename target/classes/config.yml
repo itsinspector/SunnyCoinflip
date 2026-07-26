@@ -14,6 +14,14 @@ pillars:
   countdown: 10
   # Intervallo in ticks (20 ticks = 1 secondo) per il drop degli oggetti
   item-drop-interval: 60
+  # Probabilità che il drop sia una shulker colorata con loot in slot casuali.
+  shulker-loot-chance-percent: 20
+  shulker-min-loot: 4
+  shulker-max-loot: 8
+  # Probabilità di trovare un uovo Wither, Ghast o Blaze in un drop o in una shulker.
+  mob-egg-chance-percent: 12
+  # Durata degli alleati evocati.
+  mob-lifetime-seconds: 10
 
 # Coinflip BedFight interno: non richiede altri plugin.
 bedfight:
@@ -26,6 +34,13 @@ bedfight:
   # diventa spectator senza morire realmente e rientra dopo 3 secondi se il letto è intatto.
   void-y: 64
   respawn-delay-ticks: 60
+
+  # Knockback in stile BedFight: più compatto a terra e più basso durante le combo in aria.
+  combat:
+    horizontal-knockback: 0.36
+    sprint-horizontal-knockback: 0.42
+    vertical-knockback: 0.35
+    airborne-vertical-knockback: 0.28
 
   # Deathmatch I: dopo 5 minuti entrambi i letti vengono distrutti.
   beds-auto-destroy-seconds: 300

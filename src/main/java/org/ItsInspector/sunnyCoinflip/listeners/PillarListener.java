@@ -13,40 +13,83 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.block.Block;
+import org.bukkit.block.ShulkerBox;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarFlag;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.boss.BossBar;
 import org.bukkit.entity.Egg;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Snowball;
 import org.bukkit.entity.TNTPrimed;
+import org.bukkit.entity.Wither;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.EntitySpawnEvent;
+import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.BlockStateMeta;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.projectiles.ProjectileSource;
 import org.bukkit.scheduler.BukkitRunnable;
 
 public class PillarListener implements Listener {
+    private static final List<Material> SHULKER_VARIANTS = List.of(
+            Material.SHULKER_BOX,
+            Material.WHITE_SHULKER_BOX,
+            Material.ORANGE_SHULKER_BOX,
+            Material.MAGENTA_SHULKER_BOX,
+            Material.LIGHT_BLUE_SHULKER_BOX,
+            Material.YELLOW_SHULKER_BOX,
+            Material.LIME_SHULKER_BOX,
+            Material.PINK_SHULKER_BOX,
+            Material.GRAY_SHULKER_BOX,
+            Material.LIGHT_GRAY_SHULKER_BOX,
+            Material.CYAN_SHULKER_BOX,
+            Material.PURPLE_SHULKER_BOX,
+            Material.BLUE_SHULKER_BOX,
+            Material.BROWN_SHULKER_BOX,
+            Material.GREEN_SHULKER_BOX,
+            Material.RED_SHULKER_BOX,
+            Material.BLACK_SHULKER_BOX);
     private final SunnyCoinflip plugin;
     private final Random random = new Random();
+    private final NamespacedKey pillarMobEggKey;
+    private final NamespacedKey pillarMobOwnerKey;
+    private final NamespacedKey pillarMobOpponentKey;
     private BossBar pillarBossBar;
 
     public PillarListener(SunnyCoinflip plugin) {
         this.plugin = plugin;
+        this.pillarMobEggKey = new NamespacedKey(plugin, "pillar_mob_egg");
+        this.pillarMobOwnerKey = new NamespacedKey(plugin, "pillar_mob_owner");
+        this.pillarMobOpponentKey = new NamespacedKey(plugin, "pillar_mob_opponent");
     }
 
     @EventHandler
@@ -90,6 +133,46 @@ public class PillarListener implements Listener {
                 }
 
             }
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onPillarMobEggUse(PlayerInteractEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND
+                || event.getAction() != Action.RIGHT_CLICK_AIR
+                && event.getAction() != Action.RIGHT_CLICK_BLOCK) {
+            return;
+        }
+
+        Player owner = event.getPlayer();
+        PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+        if (match == null || !match.isPlaying() || !this.isParticipant(match, owner)) return;
+
+        ItemStack item = event.getItem();
+        PillarMobType mobType = this.getPillarMobType(item);
+        if (mobType == null) return;
+
+        Player opponent = this.getOpponent(match, owner.getUniqueId());
+        if (opponent == null || !opponent.isOnline()) return;
+
+        event.setCancelled(true);
+        Location spawnLocation;
+        if (event.getClickedBlock() != null) {
+            spawnLocation = event.getClickedBlock()
+                    .getRelative(event.getBlockFace())
+                    .getLocation()
+                    .add(0.5, 0.25, 0.5);
+        } else {
+            spawnLocation = owner.getEyeLocation()
+                    .add(owner.getEyeLocation().getDirection().normalize().multiply(3.0));
+        }
+
+        if (this.spawnOwnedPillarMob(mobType, owner, opponent, match, spawnLocation)) {
+            this.consumeOne(owner);
+            owner.playSound(owner.getLocation(), mobType.spawnSound, 1.0f, 0.9f);
         }
     }
 
@@ -194,6 +277,57 @@ public class PillarListener implements Listener {
     }
 
     private ItemStack getRandomPillarItem() {
+        int shulkerChance = Math.max(0, Math.min(100,
+                this.plugin.getConfig().getInt("pillars.shulker-loot-chance-percent", 20)));
+        if (this.random.nextInt(100) < shulkerChance) {
+            return this.createLootShulker();
+        }
+        return this.getRandomLootItem(true);
+    }
+
+    private ItemStack createLootShulker() {
+        Material variant = SHULKER_VARIANTS.get(this.random.nextInt(SHULKER_VARIANTS.size()));
+        ItemStack item = new ItemStack(variant);
+        ItemMeta rawMeta = item.getItemMeta();
+        if (!(rawMeta instanceof BlockStateMeta meta)
+                || !(meta.getBlockState() instanceof ShulkerBox shulkerBox)) {
+            return this.getRandomLootItem(true);
+        }
+
+        int inventorySize = shulkerBox.getInventory().getSize();
+        int minimum = Math.max(1, Math.min(inventorySize,
+                this.plugin.getConfig().getInt("pillars.shulker-min-loot", 4)));
+        int maximum = Math.max(minimum, Math.min(inventorySize,
+                this.plugin.getConfig().getInt("pillars.shulker-max-loot", 8)));
+        int lootCount = minimum + this.random.nextInt(maximum - minimum + 1);
+
+        List<Integer> availableSlots = new ArrayList<>();
+        for (int slot = 0; slot < inventorySize; slot++) {
+            availableSlots.add(slot);
+        }
+        for (int index = 0; index < lootCount; index++) {
+            int selected = this.random.nextInt(availableSlots.size());
+            int slot = availableSlots.remove(selected);
+            shulkerBox.getInventory().setItem(slot, this.getRandomLootItem(true));
+        }
+
+        meta.setBlockState(shulkerBox);
+        meta.setDisplayName("§d§lShulker del Caos");
+        meta.setLore(List.of(
+                "§7Contiene loot distribuito casualmente.",
+                "§7Potrebbe nascondere un uovo evocatore."));
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private ItemStack getRandomLootItem(boolean allowMobEgg) {
+        int eggChance = Math.max(0, Math.min(100,
+                this.plugin.getConfig().getInt("pillars.mob-egg-chance-percent", 12)));
+        if (allowMobEgg && this.random.nextInt(100) < eggChance) {
+            PillarMobType[] types = PillarMobType.values();
+            return this.createPillarMobEgg(types[this.random.nextInt(types.length)]);
+        }
+
         Material[] mats = Material.values();
         Material mat = mats[this.random.nextInt(mats.length)];
         int attempts = 0;
@@ -201,7 +335,7 @@ public class PillarListener implements Listener {
         while(attempts < 1000) {
             if (mat.isItem() && !mat.isAir()) {
                 String name = mat.name();
-                if (!name.contains("SPAWN_EGG") && !name.contains("DEBUG") && mat != Material.BEDROCK) {
+                if (this.isSafeRandomLoot(mat, name)) {
                     break;
                 }
 
@@ -213,11 +347,194 @@ public class PillarListener implements Listener {
             }
         }
 
-        if (!mat.isItem()) {
+        if (!mat.isItem() || !this.isSafeRandomLoot(mat, mat.name())) {
             mat = Material.DIRT;
         }
 
-        return new ItemStack(mat);
+        return new ItemStack(mat, 1);
+    }
+
+    private boolean isSafeRandomLoot(Material material, String name) {
+        return material.isItem()
+                && !material.isAir()
+                && material != Material.BEDROCK
+                && !name.contains("SPAWN_EGG")
+                && !name.contains("COMMAND_BLOCK")
+                && !name.contains("DEBUG")
+                && !name.startsWith("TEST_")
+                && !name.endsWith("_SHULKER_BOX")
+                && material != Material.SHULKER_BOX
+                && material != Material.BARRIER
+                && material != Material.JIGSAW
+                && material != Material.STRUCTURE_BLOCK
+                && material != Material.STRUCTURE_VOID;
+    }
+
+    private ItemStack createPillarMobEgg(PillarMobType type) {
+        ItemStack item = new ItemStack(type.eggMaterial);
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return item;
+        long lifetimeSeconds = Math.max(
+                1L,
+                this.plugin.getConfig().getLong("pillars.mob-lifetime-seconds", 10L));
+        meta.setDisplayName(type.color + "§lUovo di " + type.displayName);
+        meta.setLore(List.of(
+                "§7Evoca un alleato che attacca",
+                "§7il tuo avversario per §f" + lifetimeSeconds + " secondi§7."));
+        meta.getPersistentDataContainer().set(
+                this.pillarMobEggKey,
+                PersistentDataType.STRING,
+                type.name());
+        meta.addItemFlags(ItemFlag.HIDE_ADDITIONAL_TOOLTIP);
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    private PillarMobType getPillarMobType(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) return null;
+        String stored = item.getItemMeta().getPersistentDataContainer().get(
+                this.pillarMobEggKey,
+                PersistentDataType.STRING);
+        if (stored == null) return null;
+        try {
+            return PillarMobType.valueOf(stored);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private boolean spawnOwnedPillarMob(
+            PillarMobType type,
+            Player owner,
+            Player opponent,
+            PillarMatch match,
+            Location spawnLocation) {
+        World world = spawnLocation.getWorld();
+        if (world == null || !world.equals(owner.getWorld()) || !world.equals(opponent.getWorld())) {
+            return false;
+        }
+
+        Entity spawned = world.spawnEntity(spawnLocation, type.entityType);
+        if (!(spawned instanceof Mob mob)) {
+            spawned.remove();
+            return false;
+        }
+
+        mob.getPersistentDataContainer().set(
+                this.pillarMobOwnerKey,
+                PersistentDataType.STRING,
+                owner.getUniqueId().toString());
+        mob.getPersistentDataContainer().set(
+                this.pillarMobOpponentKey,
+                PersistentDataType.STRING,
+                opponent.getUniqueId().toString());
+        mob.setCustomName("§f§l" + owner.getName());
+        mob.setCustomNameVisible(true);
+        mob.setPersistent(false);
+        mob.setRemoveWhenFarAway(false);
+        mob.setAware(true);
+        mob.setCanPickupItems(false);
+        mob.setLootTable(null);
+        if (mob instanceof Wither wither) {
+            wither.setInvulnerableTicks(0);
+            wither.setCanTravelThroughPortals(false);
+        }
+        this.forceOwnedMobTarget(mob, opponent);
+
+        long lifetimeTicks = Math.max(
+                20L,
+                this.plugin.getConfig().getLong("pillars.mob-lifetime-seconds", 10L) * 20L);
+        (new BukkitRunnable() {
+            private long livedTicks;
+
+            @Override
+            public void run() {
+                PillarMatch current = PillarListener.this.plugin.getGameManager().getActivePillarMatch();
+                if (!mob.isValid() || mob.isDead() || current != match || !match.isPlaying()
+                        || this.livedTicks >= lifetimeTicks) {
+                    if (mob.isValid()) mob.remove();
+                    this.cancel();
+                    return;
+                }
+
+                Player currentOpponent = Bukkit.getPlayer(opponent.getUniqueId());
+                if (currentOpponent == null || !currentOpponent.isOnline()
+                        || !currentOpponent.getWorld().equals(mob.getWorld())) {
+                    mob.remove();
+                    this.cancel();
+                    return;
+                }
+                PillarListener.this.forceOwnedMobTarget(mob, currentOpponent);
+                this.livedTicks += 10L;
+            }
+        }).runTaskTimer(this.plugin, 0L, 10L);
+        return true;
+    }
+
+    private void forceOwnedMobTarget(Mob mob, Player opponent) {
+        mob.setTarget(opponent);
+        if (mob instanceof Wither wither) {
+            for (Wither.Head head : Wither.Head.values()) {
+                wither.setTarget(head, opponent);
+            }
+        }
+    }
+
+    private Player getOpponent(PillarMatch match, UUID ownerId) {
+        UUID opponentId = ownerId.equals(match.getCreator())
+                ? match.getOpponent()
+                : match.getCreator();
+        return opponentId == null ? null : Bukkit.getPlayer(opponentId);
+    }
+
+    private boolean isParticipant(PillarMatch match, Player player) {
+        UUID playerId = player.getUniqueId();
+        return playerId.equals(match.getCreator())
+                || match.getOpponent() != null && playerId.equals(match.getOpponent());
+    }
+
+    private void consumeOne(Player player) {
+        ItemStack stack = player.getInventory().getItemInMainHand();
+        if (this.getPillarMobType(stack) == null) return;
+        if (stack.getAmount() <= 1) {
+            player.getInventory().setItemInMainHand(null);
+        } else {
+            stack.setAmount(stack.getAmount() - 1);
+            player.getInventory().setItemInMainHand(stack);
+        }
+        player.updateInventory();
+    }
+
+    private UUID getOwnedMobOwner(Entity damager) {
+        Entity source = this.resolveOwnedMobSource(damager);
+        return source == null ? null : this.readUuid(source, this.pillarMobOwnerKey);
+    }
+
+    private UUID getOwnedMobOpponent(Entity damager) {
+        Entity source = this.resolveOwnedMobSource(damager);
+        return source == null ? null : this.readUuid(source, this.pillarMobOpponentKey);
+    }
+
+    private Entity resolveOwnedMobSource(Entity entity) {
+        if (this.readUuid(entity, this.pillarMobOwnerKey) != null) return entity;
+        if (entity instanceof Projectile projectile) {
+            ProjectileSource shooter = projectile.getShooter();
+            if (shooter instanceof Entity shooterEntity
+                    && this.readUuid(shooterEntity, this.pillarMobOwnerKey) != null) {
+                return shooterEntity;
+            }
+        }
+        return null;
+    }
+
+    private UUID readUuid(Entity entity, NamespacedKey key) {
+        String stored = entity.getPersistentDataContainer().get(key, PersistentDataType.STRING);
+        if (stored == null) return null;
+        try {
+            return UUID.fromString(stored);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     public void clearBossBar() {
@@ -446,6 +763,7 @@ public class PillarListener implements Listener {
 
     @EventHandler
     public void onDamage(EntityDamageEvent event) {
+        if (event.isCancelled()) return;
         if (event.getEntity() instanceof Player) {
             Player player = (Player)event.getEntity();
             PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
@@ -467,6 +785,21 @@ public class PillarListener implements Listener {
         }
     }
 
+    @EventHandler(
+            priority = EventPriority.LOWEST
+    )
+    public void onOwnedMobDamage(EntityDamageByEntityEvent event) {
+        UUID ownerId = this.getOwnedMobOwner(event.getDamager());
+        if (ownerId == null || !(event.getEntity() instanceof Player victim)) return;
+
+        UUID opponentId = this.getOwnedMobOpponent(event.getDamager());
+        if (victim.getUniqueId().equals(ownerId)
+                || opponentId == null
+                || !victim.getUniqueId().equals(opponentId)) {
+            event.setCancelled(true);
+        }
+    }
+
     @EventHandler
     public void onProjectileHit(EntityDamageByEntityEvent event) {
         if (event.getDamager() instanceof Snowball || event.getDamager() instanceof Egg) {
@@ -479,6 +812,57 @@ public class PillarListener implements Listener {
                     }
                 }
             }
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onOwnedMobTarget(EntityTargetLivingEntityEvent event) {
+        if (!(event.getEntity() instanceof Mob mob)) return;
+        UUID opponentId = this.readUuid(mob, this.pillarMobOpponentKey);
+        if (opponentId == null) return;
+
+        Player opponent = Bukkit.getPlayer(opponentId);
+        PillarMatch match = this.plugin.getGameManager().getActivePillarMatch();
+        if (opponent == null || !opponent.isOnline()
+                || match == null || !match.isPlaying()
+                || !this.isParticipant(match, opponent)) {
+            event.setCancelled(true);
+            return;
+        }
+        if (!opponent.equals(event.getTarget())) {
+            event.setTarget(opponent);
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onOwnedMobExplode(EntityExplodeEvent event) {
+        if (this.getOwnedMobOwner(event.getEntity()) != null) {
+            event.blockList().clear();
+            event.setYield(0.0f);
+        }
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onOwnedMobChangeBlock(EntityChangeBlockEvent event) {
+        if (this.getOwnedMobOwner(event.getEntity()) != null) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onOwnedMobDeath(EntityDeathEvent event) {
+        if (this.getOwnedMobOwner(event.getEntity()) != null) {
+            event.getDrops().clear();
+            event.setDroppedExp(0);
         }
     }
 
@@ -615,5 +999,87 @@ public class PillarListener implements Listener {
             }
         }
 
+    }
+
+    private enum PillarMobType {
+        WITHER(
+                Material.WITHER_SPAWN_EGG,
+                EntityType.WITHER,
+                "Wither",
+                "§5",
+                Sound.ENTITY_WITHER_SPAWN),
+        GHAST(
+                Material.GHAST_SPAWN_EGG,
+                EntityType.GHAST,
+                "Ghast",
+                "§f",
+                Sound.ENTITY_GHAST_SCREAM),
+        BLAZE(
+                Material.BLAZE_SPAWN_EGG,
+                EntityType.BLAZE,
+                "Blaze",
+                "§6",
+                Sound.ENTITY_BLAZE_AMBIENT),
+        ZOMBIE(
+                Material.ZOMBIE_SPAWN_EGG,
+                EntityType.ZOMBIE,
+                "Zombie",
+                "§2",
+                Sound.ENTITY_ZOMBIE_AMBIENT),
+        SKELETON(
+                Material.SKELETON_SPAWN_EGG,
+                EntityType.SKELETON,
+                "Scheletro",
+                "§7",
+                Sound.ENTITY_SKELETON_AMBIENT),
+        CREEPER(
+                Material.CREEPER_SPAWN_EGG,
+                EntityType.CREEPER,
+                "Creeper",
+                "§a",
+                Sound.ENTITY_CREEPER_PRIMED),
+        SPIDER(
+                Material.SPIDER_SPAWN_EGG,
+                EntityType.SPIDER,
+                "Ragno",
+                "§8",
+                Sound.ENTITY_SPIDER_AMBIENT),
+        ENDERMAN(
+                Material.ENDERMAN_SPAWN_EGG,
+                EntityType.ENDERMAN,
+                "Enderman",
+                "§5",
+                Sound.ENTITY_ENDERMAN_SCREAM),
+        WITCH(
+                Material.WITCH_SPAWN_EGG,
+                EntityType.WITCH,
+                "Strega",
+                "§d",
+                Sound.ENTITY_WITCH_AMBIENT),
+        VINDICATOR(
+                Material.VINDICATOR_SPAWN_EGG,
+                EntityType.VINDICATOR,
+                "Vendicatore",
+                "§c",
+                Sound.ENTITY_VINDICATOR_AMBIENT);
+
+        private final Material eggMaterial;
+        private final EntityType entityType;
+        private final String displayName;
+        private final String color;
+        private final Sound spawnSound;
+
+        PillarMobType(
+                Material eggMaterial,
+                EntityType entityType,
+                String displayName,
+                String color,
+                Sound spawnSound) {
+            this.eggMaterial = eggMaterial;
+            this.entityType = entityType;
+            this.displayName = displayName;
+            this.color = color;
+            this.spawnSound = spawnSound;
+        }
     }
 }

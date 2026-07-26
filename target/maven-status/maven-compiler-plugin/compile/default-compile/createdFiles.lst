@@ -34,7 +34,9 @@ org\ItsInspector\sunnyCoinflip\managers\GameManager.class
 org\ItsInspector\sunnyCoinflip\models\Coinflip.class
 org\ItsInspector\sunnyCoinflip\listeners\InventoryListener$1.class
 org\ItsInspector\sunnyCoinflip\managers\BedfightManager$ActiveRound.class
+org\ItsInspector\sunnyCoinflip\listeners\PillarListener$6.class
 org\ItsInspector\sunnyCoinflip\SunnyCoinflip.class
 org\ItsInspector\sunnyCoinflip\commands\PillarsCommand.class
 org\ItsInspector\sunnyCoinflip\listeners\InventoryListener.class
+org\ItsInspector\sunnyCoinflip\listeners\PillarListener$PillarMobType.class
 org\ItsInspector\sunnyCoinflip\utils\NumberParser.class
