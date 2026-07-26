@@ -21,6 +21,7 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
+import org.bukkit.event.entity.EntityKnockbackByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerItemDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -256,8 +257,23 @@ public final class BedfightListener implements Listener {
         Player attacker = this.resolvePlayer(event.getDamager());
         if ((victim != null || attacker != null) && !this.manager().canDamage(attacker, victim)) {
             event.setCancelled(true);
+            return;
+        }
+        if (victim != null && attacker != null && event.getDamager() instanceof Player) {
+            this.manager().applyLegacyMeleeHit(event, attacker, victim);
         }
 
+    }
+
+    @EventHandler(
+            priority = EventPriority.HIGHEST,
+            ignoreCancelled = true
+    )
+    public void onLegacyKnockback(EntityKnockbackByEntityEvent event) {
+        if (event.getEntity() instanceof Player victim
+                && event.getSourceEntity() instanceof Player attacker) {
+            this.manager().applyLegacyKnockback(event, attacker, victim);
+        }
     }
 
     @EventHandler(

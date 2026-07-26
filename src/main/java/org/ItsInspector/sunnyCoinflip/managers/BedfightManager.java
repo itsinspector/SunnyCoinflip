@@ -20,13 +20,16 @@ import org.bukkit.block.data.type.Bed;
 import org.bukkit.command.CommandSender;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityKnockbackByEntityEvent;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -287,7 +290,7 @@ public final class BedfightManager {
             return;
         }
         restoreWaitingPlayer(player);
-        player.sendMessage(PREFIX + "§eSfida BedFight annullata correttamente.");
+        player.sendMessage(PREFIX + "§eCoinflip BedFight annullato.");
     }
 
     public void placeBet(Player bettor, String targetName, double amount) {
@@ -487,6 +490,10 @@ public final class BedfightManager {
     private void applyLegacyCombat(Player player) {
         AttributeInstance attackSpeed = player.getAttribute(Attribute.GENERIC_ATTACK_SPEED);
         if (attackSpeed != null) attackSpeed.setBaseValue(1024.0);
+        player.setCooldown(Material.WOODEN_SWORD, 0);
+        player.setCooldown(Material.WOODEN_AXE, 0);
+        player.setCooldown(Material.WOODEN_PICKAXE, 0);
+        player.setCooldown(Material.SHEARS, 0);
     }
 
     private void startCountdown(ActiveRound round) {
@@ -524,6 +531,7 @@ public final class BedfightManager {
         for (UUID id : List.of(round.match.getCreator(), round.match.getOpponent())) {
             Player player = Bukkit.getPlayer(id);
             if (player != null) {
+                applyLegacyCombat(player);
                 restoreFullHealthAfterEntry(player);
                 player.sendTitle("§a§lVIA!", "§fDistruggi il letto avversario e conquista la vittoria", 0, 35, 10);
                 playSound(player, Sound.ENTITY_ENDER_DRAGON_GROWL, 0.7f, 1.35f);
@@ -642,6 +650,71 @@ public final class BedfightManager {
         if (round.respawning.contains(attacker.getUniqueId()) || round.respawning.contains(victim.getUniqueId())) return false;
         recordLastDamager(victim, attacker);
         return true;
+    }
+
+    public void applyLegacyMeleeHit(EntityDamageByEntityEvent event, Player attacker, Player victim) {
+        if (!isLegacyCombatPair(attacker, victim)) return;
+        if (event.getCause() == EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK) {
+            event.setCancelled(true);
+            return;
+        }
+        if (event.getCause() != EntityDamageEvent.DamageCause.ENTITY_ATTACK) return;
+
+        // L'attributo elimina l'indicatore di ricarica; il danno viene comunque
+        // imposto qui per evitare che altri plugin o il calcolo moderno lo riducano.
+        applyLegacyCombat(attacker);
+        double damage = switch (attacker.getInventory().getItemInMainHand().getType()) {
+            case WOODEN_SWORD -> 5.0;
+            case WOODEN_AXE -> 4.0;
+            case WOODEN_PICKAXE -> 3.0;
+            default -> 1.0;
+        };
+        if (isLegacyCritical(attacker)) damage *= 1.5;
+        event.setDamage(damage);
+    }
+
+    public void applyLegacyKnockback(
+            EntityKnockbackByEntityEvent event,
+            Player attacker,
+            Player victim) {
+        if (!isLegacyCombatPair(attacker, victim)) return;
+
+        Vector knockback = event.getFinalKnockback().clone();
+        double horizontalLength = Math.hypot(knockback.getX(), knockback.getZ());
+        if (horizontalLength < 1.0E-6) {
+            knockback = victim.getLocation().toVector()
+                    .subtract(attacker.getLocation().toVector())
+                    .setY(0.0);
+            horizontalLength = Math.hypot(knockback.getX(), knockback.getZ());
+        }
+
+        if (horizontalLength >= 1.0E-6) {
+            double horizontalStrength = attacker.isSprinting() ? 0.5 : 0.4;
+            knockback.setX(knockback.getX() / horizontalLength * horizontalStrength);
+            knockback.setZ(knockback.getZ() / horizontalLength * horizontalStrength);
+        }
+        knockback.setY(Math.max(0.35, Math.min(0.4, knockback.getY())));
+        event.setFinalKnockback(knockback);
+    }
+
+    private boolean isLegacyCombatPair(Player attacker, Player victim) {
+        if (attacker == null || victim == null) return false;
+        ActiveRound round = activeRound;
+        return round != null
+                && round.playing
+                && !round.finishing
+                && round.match.includes(attacker.getUniqueId())
+                && round.match.includes(victim.getUniqueId())
+                && !round.respawning.contains(attacker.getUniqueId())
+                && !round.respawning.contains(victim.getUniqueId());
+    }
+
+    private boolean isLegacyCritical(Player attacker) {
+        return attacker.getFallDistance() > 0.0f
+                && !attacker.isOnGround()
+                && !attacker.isInsideVehicle()
+                && !attacker.isInWater()
+                && !attacker.isSprinting();
     }
 
     public boolean canTakeDamage(Player player) {
@@ -805,6 +878,7 @@ public final class BedfightManager {
             waitingByCreator.remove(id);
             awaitingCreateAmount.remove(id);
             restoreWaitingPlayer(player);
+            player.sendMessage(PREFIX + "§eCoinflip BedFight annullato.");
             return;
         }
 
@@ -1096,8 +1170,10 @@ public final class BedfightManager {
     }
 
     private void restoreWaitingPlayer(Player player) {
-        PlayerSnapshot snapshot = waitingSnapshots.remove(player.getUniqueId());
-        if (snapshot != null) snapshot.restore(player);
+        UUID playerId = player.getUniqueId();
+        PlayerSnapshot snapshot = waitingSnapshots.remove(playerId);
+        if (snapshot == null) return;
+        Bukkit.getScheduler().runTask(plugin, () -> restoreSnapshotReliably(playerId, snapshot));
     }
 
     private void refundBets(ActiveRound round) {
@@ -1439,7 +1515,7 @@ public final class BedfightManager {
         }
 
         private void restorePosition(Player player) {
-            player.setSpectatorTarget(null);
+            if (player.getGameMode() == GameMode.SPECTATOR) player.setSpectatorTarget(null);
             if (location.getWorld() != null) player.teleport(location.clone());
             player.setGameMode(gameMode);
             player.setAllowFlight(allowFlight || gameMode == GameMode.CREATIVE || gameMode == GameMode.SPECTATOR);
