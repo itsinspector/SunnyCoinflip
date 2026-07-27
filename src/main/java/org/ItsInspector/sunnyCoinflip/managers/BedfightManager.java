@@ -199,7 +199,7 @@ public final class BedfightManager {
         waitingByCreator.put(creator.getUniqueId(), match);
 
         prepareQueuePlayer(creator, getFirstPosition());
-        creator.sendMessage(PREFIX + "§aSfida creata con successo per §f" + money(amount) + "§a.");
+        creator.sendMessage(PREFIX + "§aSfida creata con successo per §r§f\uE0D8 §e" + money(amount) + "§a.");
         creator.sendMessage(PREFIX + "§7In attesa di un avversario. Usa §f/cf bedfight cancel §7per annullare.");
 
         long expireTicks = Math.max(20L, plugin.getConfig().getLong("bedfight.challenge-expire-seconds", 300L) * 20L);
@@ -1122,7 +1122,7 @@ public final class BedfightManager {
             economy().depositPlayer(Bukkit.getOfflinePlayer(winnerId), prize);
             Player winner = Bukkit.getPlayer(winnerId);
             if (winner != null) {
-                winner.sendTitle("§6§lVITTORIA", "§fPremio: §e" + money(prize), 5, 60, 15);
+                winner.sendTitle("§6§lVITTORIA", "§fPremio: §r§f\uE0D8 §e" + money(prize), 5, 60, 15);
                 playSound(winner, Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
                 Bukkit.getScheduler().runTaskLater(plugin,
                         () -> playSound(winner, Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.3f), 10L);
