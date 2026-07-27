@@ -394,7 +394,7 @@ public final class BedfightManager {
         player.teleport(spawn.clone());
         player.setGameMode(GameMode.SURVIVAL);
         player.setFoodLevel(20);
-        player.setSaturation(20.0f);
+        player.setSaturation(0.0f);
         player.setFireTicks(0);
         player.getInventory().clear();
 
@@ -408,7 +408,7 @@ public final class BedfightManager {
         player.setAllowFlight(false);
         player.setFlying(false);
         player.setFoodLevel(20);
-        player.setSaturation(20.0f);
+        player.setSaturation(0.0f);
         player.setFireTicks(0);
         player.setFallDistance(0);
         player.setNoDamageTicks(0);
@@ -679,31 +679,46 @@ public final class BedfightManager {
             Player victim) {
         if (!isLegacyCombatPair(attacker, victim)) return;
 
-        Vector knockback = event.getFinalKnockback().clone();
-        double horizontalLength = Math.hypot(knockback.getX(), knockback.getZ());
+        Vector direction = victim.getLocation().toVector()
+                .subtract(attacker.getLocation().toVector())
+                .setY(0.0);
+        double horizontalLength = Math.hypot(direction.getX(), direction.getZ());
         if (horizontalLength < 1.0E-6) {
-            knockback = victim.getLocation().toVector()
-                    .subtract(attacker.getLocation().toVector())
-                    .setY(0.0);
-            horizontalLength = Math.hypot(knockback.getX(), knockback.getZ());
+            direction = event.getFinalKnockback().clone().setY(0.0);
+            horizontalLength = Math.hypot(direction.getX(), direction.getZ());
         }
 
+        boolean sprintHit = attacker.isSprinting();
+        double horizontalStrength = sprintHit
+                ? Math.max(0.0, plugin.getConfig().getDouble(
+                "bedfight.combat.sprint-horizontal-knockback", 0.50))
+                : Math.max(0.0, plugin.getConfig().getDouble(
+                "bedfight.combat.horizontal-knockback", 0.40));
+        double horizontalFriction = Math.max(0.0, Math.min(1.0,
+                plugin.getConfig().getDouble("bedfight.combat.horizontal-friction", 0.50)));
+        Vector previousVelocity = victim.getVelocity();
+        Vector knockback = previousVelocity.clone().multiply(horizontalFriction);
         if (horizontalLength >= 1.0E-6) {
-            double horizontalStrength = attacker.isSprinting()
-                    ? Math.max(0.0, plugin.getConfig().getDouble(
-                    "bedfight.combat.sprint-horizontal-knockback", 0.42))
-                    : Math.max(0.0, plugin.getConfig().getDouble(
-                    "bedfight.combat.horizontal-knockback", 0.36));
-            knockback.setX(knockback.getX() / horizontalLength * horizontalStrength);
-            knockback.setZ(knockback.getZ() / horizontalLength * horizontalStrength);
+            knockback.setX(knockback.getX()
+                    + direction.getX() / horizontalLength * horizontalStrength);
+            knockback.setZ(knockback.getZ()
+                    + direction.getZ() / horizontalLength * horizontalStrength);
         }
-        double verticalStrength = Math.max(0.0, plugin.getConfig().getDouble(
+
+        double verticalBoost = Math.max(0.0, plugin.getConfig().getDouble(
                 victim.isOnGround()
                         ? "bedfight.combat.vertical-knockback"
                         : "bedfight.combat.airborne-vertical-knockback",
-                victim.isOnGround() ? 0.35 : 0.28));
-        knockback.setY(verticalStrength);
+                victim.isOnGround() ? 0.40 : 0.34));
+        double verticalFriction = Math.max(0.0, Math.min(1.0,
+                plugin.getConfig().getDouble("bedfight.combat.vertical-friction", 0.50)));
+        double verticalLimit = Math.max(0.0,
+                plugin.getConfig().getDouble("bedfight.combat.vertical-limit", 0.40));
+        knockback.setY(Math.min(
+                verticalLimit,
+                Math.max(0.0, previousVelocity.getY() * verticalFriction + verticalBoost)));
         event.setFinalKnockback(knockback);
+        if (sprintHit) attacker.setSprinting(false);
     }
 
     private boolean isLegacyCombatPair(Player attacker, Player victim) {
